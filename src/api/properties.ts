@@ -1,77 +1,156 @@
-import { PropertyType } from "../types/common";
-import { Property, PropertyItem, PropertyListResponse, PropertyLocation, RoomType } from "../types/properties";
-import { apiClient } from "./apiClient"
+import {
+  Property,
+  PropertyListResponse,
+  PropertyLocation,
+  RoomType,
+} from '../types/properties';
+
+import { PropertyType } from '../types/common';
+import { apiClient } from './apiClient';
+
+export type PropertyFilters = {
+  page: number;
+  limit: number;
+  search?: string;
+  type?: PropertyType;
+  minPrice?: number;
+  maxPrice?: number;
+  cities?: string[];
+  minRating?: number;
+  sort?: 'recency' | 'price_asc' | 'price_desc' | 'rating_desc';
+};
 
 export const PropertyAPI = {
-
-  getAllProperties: async (page: number, limit: number,
-    type: PropertyType, range: {
-      min: number;
-      max: number;
-    },
-    checkedCities: {
-      city: string;
-      checked: boolean;
-    }[]) => {
+  getAllProperties: async (
+    filters: PropertyFilters,
+  ) => {
     const params = new URLSearchParams();
-    params.append("page", page + "");
-    params.append("limit", limit + "");
-    params.append('type', type.toLocaleLowerCase())
 
-    if (range.min > 0 && range.max > 0) {
-      params.append('minPrice', range.min + "")
-      params.append('maxPrice', range.max + "")
+    params.append(
+      'page',
+      String(filters.page),
+    );
+
+    params.append(
+      'limit',
+      String(filters.limit),
+    );
+
+    if (
+      filters.search &&
+      filters.search.trim().length > 0
+    ) {
+      params.append(
+        'search',
+        filters.search.trim(),
+      );
     }
 
-    // [
-    //   {
-    //     "city": "Colombo",
-    //     checked: true
-    //   },
-    //   {
-    //     "city": "Galle",
-    //     checked: true
-    //   },
-    //   {
-    //     "city": "Kiribathgoda",
-    //     checked: true
-    //   },
-    // ]
-    // [colombo,galle,Kiribathgoda]
-    //     [  colombo,galle,Kiribathgoda]
-    //colombo,galle,Kiribathgoda ]
-    //colombo,galle,Kiribathgoda
-    if ((checkedCities.map(obj => obj.city) + "").length > 1) {
-      console.log("list ", (checkedCities.map(obj => obj.city) + ""))
-      console.log("extracted citied ", (checkedCities.map(obj => obj.city) + ""))
-      if (checkedCities.length > 0) {
-        params.append('city', (checkedCities.map(obj => obj.city) + ""))
-      }
+    if (
+      filters.type &&
+      filters.type !== 'All'
+    ) {
+      params.append(
+        'type',
+        filters.type.toLowerCase(),
+      );
     }
-    //properties?page=1&limit=4&abc=xyz
 
-    const d = await apiClient.get<PropertyListResponse>('properties?' + params.toString())
-    return d.data;
+    if (
+      filters.cities &&
+      filters.cities.length > 0
+    ) {
+      params.append(
+        'city',
+        filters.cities.join(','),
+      );
+    }
+
+    if (
+      filters.minPrice !== undefined &&
+      filters.minPrice > 0
+    ) {
+      params.append(
+        'minPrice',
+        String(Math.round(filters.minPrice)),
+      );
+    }
+
+    if (
+      filters.maxPrice !== undefined &&
+      filters.maxPrice > 0
+    ) {
+      params.append(
+        'maxPrice',
+        String(Math.round(filters.maxPrice)),
+      );
+    }
+
+    if (
+      filters.minRating !== undefined &&
+      filters.minRating > 0
+    ) {
+      params.append(
+        'minRating',
+        String(filters.minRating),
+      );
+    }
+
+    if (filters.sort) {
+      params.append(
+        'sort',
+        filters.sort,
+      );
+    }
+
+    const response =
+      await apiClient.get<PropertyListResponse>(
+        `properties?${params.toString()}`,
+      );
+
+    return response.data;
   },
 
-  getSingleProperty: async (id: string) => {
-    const d = await apiClient.get<Property>('properties/' + id)
-    return d.data;
+  getSingleProperty: async (
+    id: string,
+  ) => {
+    const response =
+      await apiClient.get<Property>(
+        `properties/${id}`,
+      );
+
+    return response.data;
   },
 
-  getPropertyRoomTypes: async (id: string) => {
-    const d = await apiClient.get<RoomType[]>('properties/' + id + '/room-types')
-    return d.data;
+  getPropertyRoomTypes: async (
+    id: string,
+  ) => {
+    const response =
+      await apiClient.get<RoomType[]>(
+        `properties/${id}/room-types`,
+      );
+
+    return response.data;
   },
 
-  getSingleRoomType: async (proprtyId: string, roomTypeId: string) => {
-    const d = await apiClient.get<RoomType>(`properties/${proprtyId}/room-types/${roomTypeId}`)
-    return d.data;
+  getSingleRoomType: async (
+    propertyId: string,
+    roomTypeId: string,
+  ) => {
+    const response =
+      await apiClient.get<RoomType>(
+        `properties/${propertyId}/room-types/${roomTypeId}`,
+      );
+
+    return response.data;
   },
 
   getMapList: async () => {
-    const d = await apiClient.get<PropertyLocation[]>(`properties/map-list`)
-    return d.data;
-  },
+    const response =
+      await apiClient.get<PropertyLocation[]>(
+        'properties/map-list',
+      );
 
-}
+    return response.data;
+  },
+};
