@@ -1,20 +1,23 @@
-import { View, Text } from 'react-native'
-import React, { useEffect, useState } from 'react'
-import { createNativeStackNavigator } from '@react-navigation/native-stack'
-import SplashScreen from '../screens/splash'
-import AuthStack from './AuthStack'
-import { checkStatus } from '../util/localStorage'
-import MainStack from './MainStack'
-import { useDispatch } from 'react-redux'
-import { initAuth } from '../store/authSlice'
-import { LinkingOptions, NavigationContainer } from '@react-navigation/native'
+import React, { useEffect, useState } from 'react';
+import {
+  LinkingOptions,
+  NavigationContainer,
+} from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useDispatch } from 'react-redux';
 
-const Stack = createNativeStackNavigator()
+import SplashScreen from '../screens/splash';
+import MainStack from './MainStack';
+import { checkStatus } from '../util/localStorage';
+import { initAuth } from '../store/authSlice';
 
-//nestboard://property/897a4dd4-6268-4fdb-950d-98a11b2f2e6b
-//nestboard://profile/user/123
+const Stack = createNativeStackNavigator();
+
 const linking: LinkingOptions<any> = {
-  prefixes: ['nestboard://'],
+  prefixes: [
+    'nestboard://',
+  ],
+
   config: {
     screens: {
       MainStack: {
@@ -22,53 +25,57 @@ const linking: LinkingOptions<any> = {
           AppStack: {
             screens: {
               PropertyDetails: 'property/:pid',
-              Profile: 'profile/user/:id'
+              Profile: 'profile/user/:id',
             },
           },
         },
       },
     },
   },
-}
-
+};
 
 const RootStack = () => {
+  const [authLoading, setAuthLoading] = useState(true);
+  const [apiReady, setApiReady] = useState(false);
 
-  const [loading, setLoading] = useState(true);
   const dispatch = useDispatch();
 
   useEffect(() => {
-    setTimeout(() => {
+    checkStatus().then(refreshToken => {
+      if (refreshToken) {
+        dispatch(
+          initAuth({
+            refreshToken,
+          }),
+        );
+      }
 
-      checkStatus().then(refreshToken => {
-        if (refreshToken) {
-          dispatch(initAuth({
-            refreshToken: refreshToken
-          }))
-        }
-        setLoading(false);
-      })
+      setAuthLoading(false);
+    });
+  }, [dispatch]);
 
-    }, 500)
-  }, [])
-
-  if (loading) {
-    return <SplashScreen />
+  if (authLoading || !apiReady) {
+    return (
+      <SplashScreen
+        onReady={() => setApiReady(true)}
+      />
+    );
   }
 
   return (
     <NavigationContainer linking={linking}>
-      <Stack.Navigator screenOptions={
-        {
-          headerShown: false
-        }
-      }
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
       >
-        <Stack.Screen name='MainStack' component={MainStack} />
+        <Stack.Screen
+          name="MainStack"
+          component={MainStack}
+        />
       </Stack.Navigator>
     </NavigationContainer>
-  )
-}
+  );
+};
 
-
-export default RootStack
+export default RootStack;
