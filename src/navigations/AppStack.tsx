@@ -22,6 +22,9 @@ import QrScan
 import MyBookings
   from '../screens/main/MyBookings';
 
+import PropertyReviews
+  from '../screens/main/PropertyReviews';
+
 const Stack =
   createNativeStackNavigator();
 
@@ -60,6 +63,11 @@ const AppStack = () => {
       <Stack.Screen
         name="QrScan"
         component={QrScan}
+      />
+
+      <Stack.Screen
+        name="PropertyReviews"
+        component={PropertyReviews}
       />
     </Stack.Navigator>
   );

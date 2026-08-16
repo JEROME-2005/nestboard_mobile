@@ -258,39 +258,48 @@ const PropertyDetails = () => {
         </TouchableOpacity>
 
         <PropertyDetailsScreen
-          title={
-            currentProperty.title
-          }
-          address={
-            currentProperty.address
-          }
-          badges={[
-            ...currentProperty.amenities,
-          ]}
-          stats={{
-            seatsAvailable: 10,
-            minStayMonths:
-              currentProperty.minStay,
-            priceFrom: 'LKR 15K',
-          }}
-          rooms={
-            roomTypes ?? []
-          }
-          onViewRooms={(
-            id,
-            name,
-          ) => {
-            nav.navigate(
-              'RoomTypeDetails',
-              {
-                roomTypeId: id,
-                roomTypeName: name,
-                location:
-                  currentProperty.address,
-              },
-            );
-          }}
-        />
+  title={
+    currentProperty.title
+  }
+  address={
+    currentProperty.address
+  }
+  badges={[
+    ...currentProperty.amenities,
+  ]}
+  stats={{
+    seatsAvailable: 10,
+    minStayMonths:
+      currentProperty.minStay,
+    priceFrom: 'LKR 15K',
+  }}
+  rooms={
+    roomTypes ?? []
+  }
+  rating={
+    Number(
+      currentProperty.rating,
+    )
+  }
+  onViewReviews={() =>
+    nav.navigate(
+      'PropertyReviews',
+      {
+        propertyId:
+          currentProperty.id,
+
+        propertyTitle:
+          currentProperty.title,
+      },
+    )
+  }
+  onViewRooms={(
+    id,
+    roomTypeName,
+  ) => {
+    // keep your existing code here
+  }}
+/>
       </View>
     </ScreenWrapper>
   );
