@@ -25,6 +25,9 @@ import MyBookings
 import PropertyReviews
   from '../screens/main/PropertyReviews';
 
+import Notifications
+  from '../screens/main/Notifications';
+
 const Stack =
   createNativeStackNavigator();
 
@@ -59,6 +62,11 @@ const AppStack = () => {
         name="MyBookings"
         component={MyBookings}
       />
+
+      <Stack.Screen
+  name="Notifications"
+  component={Notifications}
+/>
 
       <Stack.Screen
         name="QrScan"
