@@ -1,6 +1,5 @@
 import {
   View,
-  Text,
   Alert,
   TouchableOpacity,
   ActivityIndicator,
@@ -36,7 +35,7 @@ import {
   useSelector,
 } from 'react-redux';
 
-import {
+import type {
   RootState,
 } from '../../../store/store';
 
@@ -70,6 +69,9 @@ const PropertyDetails = () => {
   const dispatch =
     useDispatch();
 
+  const propertyId =
+    route.params?.pid;
+
   const currentProperty =
     useSelector(
       (state: RootState) =>
@@ -92,17 +94,55 @@ const PropertyDetails = () => {
     setFavouriteLoading,
   ] = useState(false);
 
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
+
+  const [
+    propertyUnavailable,
+    setPropertyUnavailable,
+  ] = useState(false);
+
   /*
-   * Load property + room types
+   * Load property
    */
   useEffect(() => {
     const loadProperty =
       async () => {
+        if (!propertyId) {
+          setLoading(false);
+          setPropertyUnavailable(true);
+
+          Alert.alert(
+            'Property unavailable',
+            'The property link is invalid.',
+            [
+              {
+                text: 'Go Back',
+                onPress: () =>
+                  nav.goBack(),
+              },
+            ],
+          );
+
+          return;
+        }
+
         try {
+          setLoading(true);
+          setPropertyUnavailable(false);
+
           const data =
             await PropertyAPI.getSingleProperty(
-              route.params.pid,
+              propertyId,
             );
+
+          if (!data) {
+            throw new Error(
+              'Property not found',
+            );
+          }
 
           dispatch(
             saveProperty(data),
@@ -111,38 +151,102 @@ const PropertyDetails = () => {
           setFavouriteSaved(
             data.saved ?? false,
           );
-        } catch (error) {
+        } catch (error: any) {
           console.error(
             'Failed to load property:',
             error,
           );
+
+          const status =
+            error?.response?.status;
+
+          if (
+            status === 404 ||
+            status === 403 ||
+            status === 400
+          ) {
+            setPropertyUnavailable(
+              true,
+            );
+
+            Alert.alert(
+              'Property unavailable',
+              'This property no longer exists or is no longer available.',
+              [
+                {
+                  text: 'Go Back',
+                  onPress: () =>
+                    nav.goBack(),
+                },
+              ],
+            );
+          } else {
+            Alert.alert(
+              'Unable to load property',
+              'Please check your connection and try again.',
+              [
+                {
+                  text: 'Go Back',
+                  onPress: () =>
+                    nav.goBack(),
+                },
+              ],
+            );
+          }
+        } finally {
+          setLoading(false);
         }
       };
 
+    loadProperty();
+  }, [
+    dispatch,
+    propertyId,
+    nav,
+  ]);
+
+  /*
+   * Load room types
+   */
+  useEffect(() => {
     const loadRoomTypes =
       async () => {
+        if (!propertyId) {
+          return;
+        }
+
         try {
           const data =
             await PropertyAPI.getPropertyRoomTypes(
-              route.params.pid,
+              propertyId,
             );
 
           dispatch(
             saveRoomTypes(data),
           );
-        } catch (error) {
+        } catch (error: any) {
           console.error(
             'Failed to load room types:',
             error,
           );
+
+          /*
+           * If the property itself has already been
+           * identified as unavailable, do nothing.
+           */
+          if (
+            propertyUnavailable
+          ) {
+            return;
+          }
         }
       };
 
-    loadProperty();
     loadRoomTypes();
   }, [
     dispatch,
-    route.params.pid,
+    propertyId,
+    propertyUnavailable,
   ]);
 
   /*
@@ -150,7 +254,11 @@ const PropertyDetails = () => {
    */
   const handleFavourite =
     async () => {
-      if (favouriteLoading) {
+      if (
+        favouriteLoading ||
+        !propertyId ||
+        propertyUnavailable
+      ) {
         return;
       }
 
@@ -168,7 +276,7 @@ const PropertyDetails = () => {
       try {
         const response =
           await FavouriteAPI.toggleFavourite(
-            route.params.pid,
+            propertyId,
           );
 
         const nextSaved =
@@ -178,7 +286,7 @@ const PropertyDetails = () => {
         setFavouriteSaved(
           nextSaved,
         );
-      } catch (error) {
+      } catch (error: any) {
         console.error(
           'Favourite error:',
           error,
@@ -187,6 +295,32 @@ const PropertyDetails = () => {
         setFavouriteSaved(
           previous,
         );
+
+        const status =
+          error?.response?.status;
+
+        if (
+          status === 404 ||
+          status === 403
+        ) {
+          setPropertyUnavailable(
+            true,
+          );
+
+          Alert.alert(
+            'Property unavailable',
+            'This property is no longer available.',
+            [
+              {
+                text: 'Go Back',
+                onPress: () =>
+                  nav.goBack(),
+              },
+            ],
+          );
+
+          return;
+        }
 
         Alert.alert(
           'Error',
@@ -199,7 +333,10 @@ const PropertyDetails = () => {
       }
     };
 
-  if (!currentProperty) {
+  /*
+   * Loading state
+   */
+  if (loading) {
     return (
       <ScreenWrapper>
         <Skeleton
@@ -211,6 +348,59 @@ const PropertyDetails = () => {
           }}
           width="100%"
         />
+      </ScreenWrapper>
+    );
+  }
+
+  /*
+   * Prevent rendering stale Redux data when
+   * a QR/deep link property is invalid.
+   */
+  if (
+    propertyUnavailable ||
+    !currentProperty
+  ) {
+    return (
+      <ScreenWrapper>
+        <View
+          style={
+            styles.unavailableContainer
+          }
+        >
+          <ActivityIndicator
+            size="large"
+            color={
+              Colors.PRIMARY_COLOR
+            }
+          />
+        </View>
+      </ScreenWrapper>
+    );
+  }
+
+  /*
+   * Extra safety:
+   * Never display a previously loaded property's
+   * Redux data for a different property ID.
+   */
+  if (
+    currentProperty.id !==
+    propertyId
+  ) {
+    return (
+      <ScreenWrapper>
+        <View
+          style={
+            styles.unavailableContainer
+          }
+        >
+          <ActivityIndicator
+            size="large"
+            color={
+              Colors.PRIMARY_COLOR
+            }
+          />
+        </View>
       </ScreenWrapper>
     );
   }
@@ -258,48 +448,54 @@ const PropertyDetails = () => {
         </TouchableOpacity>
 
         <PropertyDetailsScreen
-  title={
-    currentProperty.title
-  }
-  address={
-    currentProperty.address
-  }
-  badges={[
-    ...currentProperty.amenities,
-  ]}
-  stats={{
-    seatsAvailable: 10,
-    minStayMonths:
-      currentProperty.minStay,
-    priceFrom: 'LKR 15K',
-  }}
-  rooms={
-    roomTypes ?? []
-  }
-  rating={
-    Number(
-      currentProperty.rating,
-    )
-  }
-  onViewReviews={() =>
-    nav.navigate(
-      'PropertyReviews',
-      {
-        propertyId:
-          currentProperty.id,
+          title={
+            currentProperty.title
+          }
+          address={
+            currentProperty.address
+          }
+          badges={[
+            ...(
+              currentProperty.amenities ??
+              []
+            ),
+          ]}
+          stats={{
+            seatsAvailable: 10,
+            minStayMonths:
+              currentProperty.minStay,
+            priceFrom: 'LKR 15K',
+          }}
+          rooms={
+            roomTypes ?? []
+          }
+          rating={
+            Number(
+              currentProperty.rating,
+            )
+          }
+          onViewReviews={() =>
+            nav.navigate(
+              'PropertyReviews',
+              {
+                propertyId:
+                  currentProperty.id,
 
-        propertyTitle:
-          currentProperty.title,
-      },
-    )
-  }
-  onViewRooms={(
-    id,
-    roomTypeName,
-  ) => {
-    // keep your existing code here
-  }}
-/>
+                propertyTitle:
+                  currentProperty.title,
+              },
+            )
+          }
+          onViewRooms={(
+            id,
+            roomTypeName,
+          ) => {
+            /*
+             * Keep your existing room navigation
+             * logic here.
+             */
+          }}
+        />
       </View>
     </ScreenWrapper>
   );
@@ -307,24 +503,31 @@ const PropertyDetails = () => {
 
 export default PropertyDetails;
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    position: 'relative',
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      position: 'relative',
+    },
 
-  favouriteButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor:
-      'rgba(255,255,255,0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 100,
-    elevation: 5,
-  },
-});
+    favouriteButton: {
+      position: 'absolute',
+      top: 16,
+      right: 16,
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor:
+        'rgba(255,255,255,0.95)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 100,
+      elevation: 5,
+    },
+
+    unavailableContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+  });

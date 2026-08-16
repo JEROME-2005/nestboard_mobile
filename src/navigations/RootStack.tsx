@@ -1,69 +1,354 @@
-import React, { useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
 import {
-  LinkingOptions,
+  Linking,
+} from 'react-native';
+
+import {
   NavigationContainer,
+  createNavigationContainerRef,
 } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useDispatch } from 'react-redux';
 
-import SplashScreen from '../screens/splash';
-import MainStack from './MainStack';
-import { checkStatus } from '../util/localStorage';
-import { initAuth } from '../store/authSlice';
+import {
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
 
-const Stack = createNativeStackNavigator();
+import {
+  useDispatch,
+  useSelector,
+} from 'react-redux';
 
-const linking: LinkingOptions<any> = {
-  prefixes: [
-    'nestboard://',
-  ],
+import SplashScreen
+  from '../screens/splash';
 
-  config: {
-    screens: {
-      MainStack: {
-        screens: {
-          AppStack: {
-            screens: {
-              PropertyDetails: 'property/:pid',
-              Profile: 'profile/user/:id',
-            },
-          },
-        },
-      },
-    },
-  },
-};
+import MainStack
+  from './MainStack';
+
+import {
+  checkStatus,
+} from '../util/localStorage';
+
+import {
+  initAuth,
+} from '../store/authSlice';
+
+import type {
+  RootState,
+} from '../store/store';
+
+const Stack =
+  createNativeStackNavigator();
+
+export const navigationRef =
+  createNavigationContainerRef<any>();
+
+type PendingDestination =
+  | {
+      type: 'PROPERTY';
+      propertyId: string;
+    }
+  | {
+      type: 'MY_BOOKINGS';
+    }
+  | null;
 
 const RootStack = () => {
-  const [authLoading, setAuthLoading] = useState(true);
-  const [apiReady, setApiReady] = useState(false);
+  const [
+    authLoading,
+    setAuthLoading,
+  ] = useState(true);
 
-  const dispatch = useDispatch();
+  const [
+    apiReady,
+    setApiReady,
+  ] = useState(false);
+
+  const [
+    navigationReady,
+    setNavigationReady,
+  ] = useState(false);
+
+  const pendingDestination =
+    useRef<PendingDestination>(
+      null,
+    );
+
+  const dispatch =
+    useDispatch();
+
+  const isAuthenticated =
+    useSelector(
+      (state: RootState) =>
+        state.auth.isAuthenticated,
+    );
 
   useEffect(() => {
-    checkStatus().then(refreshToken => {
-      if (refreshToken) {
-        dispatch(
-          initAuth({
-            refreshToken,
-          }),
-        );
-      }
-
-      setAuthLoading(false);
-    });
+    checkStatus()
+      .then(refreshToken => {
+        if (refreshToken) {
+          dispatch(
+            initAuth({
+              refreshToken,
+            }),
+          );
+        }
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
   }, [dispatch]);
 
-  if (authLoading || !apiReady) {
+  const openProperty =
+    useCallback(
+      (propertyId: string) => {
+        if (
+          !navigationRef.isReady()
+        ) {
+          return;
+        }
+
+        navigationRef.navigate(
+          'MainStack',
+          {
+            screen: 'AppStack',
+
+            params: {
+              screen:
+                'PropertyDetails',
+
+              params: {
+                pid: propertyId,
+              },
+            },
+          },
+        );
+      },
+      [],
+    );
+
+  const openMyBookings =
+    useCallback(() => {
+      if (
+        !navigationRef.isReady()
+      ) {
+        return;
+      }
+
+      navigationRef.navigate(
+        'MainStack',
+        {
+          screen: 'AppStack',
+
+          params: {
+            screen:
+              'MyBookings',
+          },
+        },
+      );
+    }, []);
+
+  const openLogin =
+    useCallback(() => {
+      if (
+        !navigationRef.isReady()
+      ) {
+        return;
+      }
+
+      navigationRef.navigate(
+        'MainStack',
+        {
+          screen: 'AuthStack',
+
+          params: {
+            screen: 'Login',
+          },
+        },
+      );
+    }, []);
+
+  const handleDeepLink =
+    useCallback(
+      (
+        url: string,
+      ) => {
+        const cleaned =
+          url
+            .trim()
+            .replace(
+              /^nestboard:\/\//i,
+              '',
+            )
+            .replace(
+              /^\/+/,
+              '',
+            );
+
+        const path =
+          cleaned
+            .split('?')[0]
+            .split('#')[0];
+
+        const propertyMatch =
+          path.match(
+            /^property\/([^/]+)\/?$/i,
+          );
+
+        if (
+          propertyMatch?.[1]
+        ) {
+          const propertyId =
+            decodeURIComponent(
+              propertyMatch[1],
+            );
+
+          openProperty(
+            propertyId,
+          );
+
+          return;
+        }
+
+        if (
+          /^my-bookings\/?$/i.test(
+            path,
+          )
+        ) {
+          if (
+            isAuthenticated
+          ) {
+            openMyBookings();
+          } else {
+            pendingDestination.current =
+              {
+                type:
+                  'MY_BOOKINGS',
+              };
+
+            openLogin();
+          }
+
+          return;
+        }
+
+        pendingDestination.current =
+          null;
+      },
+      [
+        isAuthenticated,
+        openLogin,
+        openMyBookings,
+        openProperty,
+      ],
+    );
+
+  useEffect(() => {
+    if (
+      !navigationReady ||
+      authLoading ||
+      !apiReady
+    ) {
+      return;
+    }
+
+    Linking.getInitialURL()
+      .then(url => {
+        if (url) {
+          handleDeepLink(
+            url,
+          );
+        }
+      })
+      .catch(() => {
+        // Ignore invalid initial URL
+      });
+
+    const subscription =
+      Linking.addEventListener(
+        'url',
+        event => {
+          handleDeepLink(
+            event.url,
+          );
+        },
+      );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    apiReady,
+    authLoading,
+    handleDeepLink,
+    navigationReady,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !pendingDestination.current
+    ) {
+      return;
+    }
+
+    const destination =
+      pendingDestination.current;
+
+    pendingDestination.current =
+      null;
+
+    const timer =
+      setTimeout(() => {
+        if (
+          destination.type ===
+          'PROPERTY'
+        ) {
+          openProperty(
+            destination.propertyId,
+          );
+        }
+
+        if (
+          destination.type ===
+          'MY_BOOKINGS'
+        ) {
+          openMyBookings();
+        }
+      }, 150);
+
+    return () =>
+      clearTimeout(timer);
+  }, [
+    isAuthenticated,
+    openMyBookings,
+    openProperty,
+  ]);
+
+  if (
+    authLoading ||
+    !apiReady
+  ) {
     return (
       <SplashScreen
-        onReady={() => setApiReady(true)}
+        onReady={() =>
+          setApiReady(true)
+        }
       />
     );
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() =>
+        setNavigationReady(true)
+      }
+    >
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
