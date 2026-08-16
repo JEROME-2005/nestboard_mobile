@@ -50,6 +50,7 @@ export interface Property {
   minStay: string;
   isActive: boolean;
   createdAt: string;
+  saved?: boolean;
 }
 
 // export type PropertyTypes = Property["type"];
