@@ -22,6 +22,7 @@ import {
   CalendarDays,
   Camera,
   Check,
+  LogOut,
   User,
 } from 'lucide-react-native';
 
@@ -29,8 +30,11 @@ import {
   useNavigation,
 } from '@react-navigation/native';
 
-import Typography
-  from '../../../components/ui/Typography';
+import {
+  useDispatch,
+} from 'react-redux';
+
+import Typography from '../../../components/ui/Typography';
 
 import {
   Colors,
@@ -44,9 +48,20 @@ import type {
   UserProfile,
 } from '../../../types/profile';
 
+import {
+  logout,
+} from '../../../store/authSlice';
+
+import {
+  removeRefreshToken,
+} from '../../../util/localStorage';
+
 const Profile = () => {
   const navigation: any =
     useNavigation();
+
+  const dispatch =
+    useDispatch();
 
   const [
     profile,
@@ -75,140 +90,219 @@ const Profile = () => {
     setUploadingImage,
   ] = useState(false);
 
-  const loadProfile = async () => {
-    try {
-      setLoading(true);
+  const loadProfile =
+    async () => {
+      try {
+        setLoading(true);
 
-      const data =
-        await ProfileAPI.getMe();
+        const data =
+          await ProfileAPI.getMe();
 
-      setProfile(data);
+        setProfile(data);
 
-      setDisplayName(
-        data.displayName,
-      );
-    } catch (error: any) {
-      Alert.alert(
-        'Error',
-        'Unable to load your profile.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        setDisplayName(
+          data.displayName ?? '',
+        );
+      } catch (error: any) {
+        console.error(
+          'Unable to load profile:',
+          error,
+        );
+
+        Alert.alert(
+          'Error',
+          'Unable to load your profile.',
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
 
   useEffect(() => {
     loadProfile();
   }, []);
 
-  const handleSelectImage = async () => {
-    const result =
-      await launchImageLibrary({
-        mediaType: 'photo',
-        selectionLimit: 1,
-        quality: 0.8,
-      });
+  const handleSelectImage =
+    async () => {
+      const result =
+        await launchImageLibrary({
+          mediaType: 'photo',
+          selectionLimit: 1,
+          quality: 0.8,
+        });
 
-    if (result.didCancel) {
-      return;
-    }
+      if (result.didCancel) {
+        return;
+      }
 
-    const asset =
-      result.assets?.[0];
+      const asset =
+        result.assets?.[0];
 
-    if (!asset?.uri) {
-      return;
-    }
+      if (!asset?.uri) {
+        return;
+      }
 
-    try {
-      setUploadingImage(true);
+      try {
+        setUploadingImage(true);
 
-      const uploadResult =
-        await ProfileAPI.uploadProfileImage(
-          asset.uri,
-          asset.type ??
-            'image/jpeg',
-          asset.fileName ??
-            `profile-${Date.now()}.jpg`,
+        const uploadResult =
+          await ProfileAPI.uploadProfileImage(
+            asset.uri,
+            asset.type ??
+              'image/jpeg',
+            asset.fileName ??
+              `profile-${Date.now()}.jpg`,
+          );
+
+        const updated =
+          await ProfileAPI.updateMe({
+            avatarUrl:
+              uploadResult.url,
+          });
+
+        setProfile(updated);
+
+        setDisplayName(
+          updated.displayName ?? '',
         );
 
-      const updated =
-        await ProfileAPI.updateMe({
-          avatarUrl:
-            uploadResult.url,
-        });
+        Alert.alert(
+          'Success',
+          'Profile image updated.',
+        );
+      } catch (error: any) {
+        console.error(
+          'Profile image upload failed:',
+          error,
+        );
 
-      setProfile(updated);
+        const message =
+          error?.response?.data?.error
+            ?.message ??
+          error?.response?.data
+            ?.message ??
+          'Unable to upload profile image.';
 
+        Alert.alert(
+          'Upload failed',
+          message,
+        );
+      } finally {
+        setUploadingImage(false);
+      }
+    };
+
+  const handleSave =
+    async () => {
+      const trimmedName =
+        displayName.trim();
+
+      if (
+        trimmedName.length < 2
+      ) {
+        Alert.alert(
+          'Invalid name',
+          'Display name must contain at least 2 characters.',
+        );
+
+        return;
+      }
+
+      try {
+        setSaving(true);
+
+        const updated =
+          await ProfileAPI.updateMe({
+            displayName:
+              trimmedName,
+          });
+
+        setProfile(updated);
+
+        setDisplayName(
+          updated.displayName ?? '',
+        );
+
+        Alert.alert(
+          'Success',
+          'Profile updated successfully.',
+        );
+      } catch (error: any) {
+        console.error(
+          'Profile update failed:',
+          error,
+        );
+
+        const message =
+          error?.response?.data?.error
+            ?.message ??
+          error?.response?.data
+            ?.message ??
+          'Unable to update your profile.';
+
+        Alert.alert(
+          'Update failed',
+          message,
+        );
+      } finally {
+        setSaving(false);
+      }
+    };
+
+  const handleLogout =
+    () => {
       Alert.alert(
-        'Success',
-        'Profile image updated.',
+        'Logout',
+        'Are you sure you want to logout?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Logout',
+            style: 'destructive',
+
+            onPress:
+              async () => {
+                try {
+                  /*
+                   * Remove the persisted refresh token
+                   * first so the session cannot be
+                   * restored when the app starts again.
+                   */
+                  await removeRefreshToken();
+
+                  /*
+                   * Clear accessToken,
+                   * refreshToken and
+                   * isAuthenticated from Redux.
+                   */
+                  dispatch(logout());
+                } catch (error) {
+                  console.error(
+                    'Logout failed:',
+                    error,
+                  );
+
+                  /*
+                   * Even if storage removal has an
+                   * unexpected problem, clear Redux
+                   * authentication state.
+                   */
+                  dispatch(logout());
+                }
+              },
+          },
+        ],
       );
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.error?.message ??
-        error?.response?.data?.message ??
-        'Unable to upload profile image.';
-
-      Alert.alert(
-        'Upload failed',
-        message,
-      );
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  const handleSave = async () => {
-    const trimmedName =
-      displayName.trim();
-
-    if (trimmedName.length < 2) {
-      Alert.alert(
-        'Invalid name',
-        'Display name must contain at least 2 characters.',
-      );
-
-      return;
-    }
-
-    try {
-      setSaving(true);
-
-      const updated =
-        await ProfileAPI.updateMe({
-          displayName:
-            trimmedName,
-        });
-
-      setProfile(updated);
-
-      setDisplayName(
-        updated.displayName,
-      );
-
-      Alert.alert(
-        'Success',
-        'Profile updated successfully.',
-      );
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.error?.message ??
-        error?.response?.data?.message ??
-        'Unable to update your profile.';
-
-      Alert.alert(
-        'Update failed',
-        message,
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
+    };
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View
+        style={styles.center}
+      >
         <ActivityIndicator
           size="large"
           color={
@@ -225,14 +319,20 @@ const Profile = () => {
       contentContainerStyle={
         styles.content
       }
+      keyboardShouldPersistTaps="handled"
     >
       <Typography variant="h1">
         Profile
       </Typography>
 
-      <View style={styles.profileCard}>
+      {/* PROFILE HEADER */}
+      <View
+        style={styles.profileCard}
+      >
         <TouchableOpacity
-          style={styles.avatarWrapper}
+          style={
+            styles.avatarWrapper
+          }
           onPress={
             handleSelectImage
           }
@@ -246,7 +346,9 @@ const Profile = () => {
                 uri:
                   profile.avatarUrl,
               }}
-              style={styles.avatar}
+              style={
+                styles.avatar
+              }
             />
           ) : (
             <View
@@ -264,7 +366,9 @@ const Profile = () => {
           )}
 
           <View
-            style={styles.cameraButton}
+            style={
+              styles.cameraButton
+            }
           >
             {uploadingImage ? (
               <ActivityIndicator
@@ -282,23 +386,29 @@ const Profile = () => {
 
         <Typography
           variant="h2"
-          style={styles.profileName}
+          style={
+            styles.profileName
+          }
         >
-          {profile?.displayName}
+          {profile?.displayName ||
+            'User'}
         </Typography>
 
         <Typography
           variant="caption"
           style={styles.email}
         >
-          {profile?.email}
+          {profile?.email || ''}
         </Typography>
       </View>
 
+      {/* EDIT PROFILE */}
       <View style={styles.form}>
         <Typography
           variant="h3"
-          style={styles.sectionTitle}
+          style={
+            styles.sectionTitle
+          }
         >
           Edit Profile
         </Typography>
@@ -316,8 +426,11 @@ const Profile = () => {
             setDisplayName
           }
           placeholder="Enter your display name"
+          placeholderTextColor="#9CA3AF"
           style={styles.input}
           maxLength={100}
+          autoCapitalize="words"
+          editable={!saving}
         />
 
         <TouchableOpacity
@@ -326,7 +439,9 @@ const Profile = () => {
             saving &&
               styles.disabledButton,
           ]}
-          onPress={handleSave}
+          onPress={
+            handleSave
+          }
           disabled={saving}
         >
           {saving ? (
@@ -353,6 +468,7 @@ const Profile = () => {
         </TouchableOpacity>
       </View>
 
+      {/* MY BOOKINGS */}
       <TouchableOpacity
         style={styles.menuButton}
         onPress={() =>
@@ -373,6 +489,7 @@ const Profile = () => {
         </Typography>
       </TouchableOpacity>
 
+      {/* NOTIFICATIONS */}
       <TouchableOpacity
         style={styles.menuButton}
         onPress={() =>
@@ -383,6 +500,31 @@ const Profile = () => {
       >
         <Typography variant="h3">
           Notifications
+        </Typography>
+      </TouchableOpacity>
+
+      {/* LOGOUT */}
+      <TouchableOpacity
+        style={[
+          styles.menuButton,
+          styles.logoutButton,
+        ]}
+        onPress={
+          handleLogout
+        }
+      >
+        <LogOut
+          size={22}
+          color="#DC2626"
+        />
+
+        <Typography
+          variant="h3"
+          style={
+            styles.logoutText
+          }
+        >
+          Logout
         </Typography>
       </TouchableOpacity>
     </ScrollView>
@@ -481,6 +623,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 16,
     backgroundColor: '#FFFFFF',
+    color: '#111827',
   },
 
   saveButton: {
@@ -512,5 +655,15 @@ const styles = StyleSheet.create({
     backgroundColor:
       Colors.WHITE,
     elevation: 2,
+  },
+
+  logoutButton: {
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+
+  logoutText: {
+    color: '#DC2626',
   },
 });

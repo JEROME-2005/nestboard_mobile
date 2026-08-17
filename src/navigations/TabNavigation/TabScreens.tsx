@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useState,
 } from 'react';
@@ -18,6 +19,10 @@ import {
   Home,
   User,
 } from 'lucide-react-native';
+
+import {
+  useFocusEffect,
+} from '@react-navigation/native';
 
 import HomeScreen
   from '../../screens/main/Home';
@@ -39,6 +44,67 @@ import {
 const Tab =
   createBottomTabNavigator();
 
+/*
+ * These are used by BottomTabView.tsx.
+ *
+ * Keep this export because BottomTabView
+ * imports:
+ *
+ * import { Tabs } from "./TabScreens";
+ */
+export const Tabs = [
+  {
+    defaultIcon: (
+      <Home
+        size={24}
+        color={Colors.ICON_GRAY}
+      />
+    ),
+
+    selectedIcon: (
+      <Home
+        size={24}
+        color={Colors.WHITE}
+        fill={Colors.WHITE}
+      />
+    ),
+  },
+
+  {
+    defaultIcon: (
+      <Heart
+        size={24}
+        color={Colors.ICON_GRAY}
+      />
+    ),
+
+    selectedIcon: (
+      <Heart
+        size={24}
+        color={Colors.WHITE}
+        fill={Colors.WHITE}
+      />
+    ),
+  },
+
+  {
+    defaultIcon: (
+      <User
+        size={24}
+        color={Colors.ICON_GRAY}
+      />
+    ),
+
+    selectedIcon: (
+      <User
+        size={24}
+        color={Colors.WHITE}
+        fill={Colors.WHITE}
+      />
+    ),
+  },
+];
+
 const ProfileTabIcon = ({
   color,
   size,
@@ -51,28 +117,55 @@ const ProfileTabIcon = ({
     setUnreadCount,
   ] = useState(0);
 
-  useEffect(() => {
-    const loadUnreadCount =
+  const loadUnreadCount =
+    useCallback(
       async () => {
         try {
           const notifications =
             await NotificationsAPI.getAll();
 
-          setUnreadCount(
+          const count =
             notifications.filter(
-              item => !item.isRead,
-            ).length,
-          );
+              item =>
+                !item.isRead,
+            ).length;
+
+          setUnreadCount(count);
         } catch (error) {
           console.error(
             'Unable to load notification count:',
             error,
           );
+
+          /*
+           * Don't break the tab bar if
+           * notifications cannot be loaded.
+           */
+          setUnreadCount(0);
         }
-      };
+      },
+      [],
+    );
 
-    loadUnreadCount();
+  /*
+   * Refresh immediately whenever
+   * the Profile tab comes into focus.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      loadUnreadCount();
 
+      return undefined;
+    }, [
+      loadUnreadCount,
+    ]),
+  );
+
+  /*
+   * Also refresh periodically while
+   * the component is mounted.
+   */
+  useEffect(() => {
     const interval =
       setInterval(
         loadUnreadCount,
@@ -80,10 +173,10 @@ const ProfileTabIcon = ({
       );
 
     return () =>
-      clearInterval(
-        interval,
-      );
-  }, []);
+      clearInterval(interval);
+  }, [
+    loadUnreadCount,
+  ]);
 
   return (
     <View>

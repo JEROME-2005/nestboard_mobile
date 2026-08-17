@@ -40,82 +40,67 @@ export const useFavourites = (
   );
 
   const fetchFavourites =
-    useCallback(async () => {
-      if (!enabled) {
-        return;
-      }
+    useCallback(
+      async () => {
+        if (!enabled) {
+          return;
+        }
 
-      setLoading(true);
-      setError(null);
+        setLoading(true);
+        setError(null);
 
-      try {
-        const data =
-          await FavouriteAPI.getMyFavourites();
+        try {
+          const data =
+            await FavouriteAPI.getMyFavourites();
 
-        setFavourites(data);
-      } catch {
-        setError(
-          'Unable to load your favourites.',
-        );
-      } finally {
-        setLoading(false);
-      }
-    }, [enabled]);
+          setFavourites(
+            data.map(
+              property => ({
+                ...property,
+                saved: true,
+              }),
+            ),
+          );
+        } catch (error) {
+          console.error(
+            'Failed to load favourites:',
+            error,
+          );
+
+          setError(
+            'Unable to load your favourites.',
+          );
+        } finally {
+          setLoading(false);
+        }
+      },
+      [enabled],
+    );
 
   useEffect(() => {
     fetchFavourites();
-  }, [fetchFavourites]);
+  }, [
+    fetchFavourites,
+  ]);
 
   const removeFavourite =
     useCallback(
       async (
         propertyId: string,
       ) => {
-        setUpdatingId(propertyId);
-
-        try {
-          await FavouriteAPI.removeFavourite(
-            propertyId,
-          );
-
-          setFavourites(
-            current =>
-              current.filter(
-                property =>
-                  property.id !==
-                  propertyId,
-              ),
-          );
-
-          return true;
-        } catch {
-          return false;
-        } finally {
-          setUpdatingId(null);
-        }
-      },
-      [],
-    );
-
-  const toggleFavourite =
-    useCallback(
-      async (
-        propertyId: string,
-        currentlySaved: boolean,
-      ) => {
-        setUpdatingId(propertyId);
+        setUpdatingId(
+          propertyId,
+        );
 
         try {
           const response =
-            await FavouriteAPI.toggleFavourite(
+            await FavouriteAPI.removeFavourite(
               propertyId,
             );
 
-          const saved =
-            response.saved ??
-            !currentlySaved;
-
-          if (!saved) {
+          if (
+            !response.isFavorite
+          ) {
             setFavourites(
               current =>
                 current.filter(
@@ -126,9 +111,14 @@ export const useFavourites = (
             );
           }
 
-          return saved;
-        } catch {
-          return currentlySaved;
+          return true;
+        } catch (error) {
+          console.error(
+            'Failed to remove favourite:',
+            error,
+          );
+
+          return false;
         } finally {
           setUpdatingId(null);
         }
@@ -141,8 +131,8 @@ export const useFavourites = (
     loading,
     error,
     updatingId,
-    refetch: fetchFavourites,
+    refetch:
+      fetchFavourites,
     removeFavourite,
-    toggleFavourite,
   };
 };

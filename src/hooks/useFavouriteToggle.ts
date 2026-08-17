@@ -10,13 +10,17 @@ import {
 export const useFavouriteToggle = (
   initialSaved = false,
 ) => {
-  const [saved, setSaved] =
-    useState<boolean>(
-      initialSaved,
-    );
+  const [
+    saved,
+    setSaved,
+  ] = useState(
+    initialSaved,
+  );
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
   const toggle =
     useCallback(
@@ -27,7 +31,8 @@ export const useFavouriteToggle = (
           return saved;
         }
 
-        const previous = saved;
+        const previous =
+          saved;
 
         setSaved(!previous);
         setLoading(true);
@@ -39,14 +44,22 @@ export const useFavouriteToggle = (
             );
 
           const nextSaved =
-            response.saved ??
-            !previous;
+            response.isFavorite;
 
-          setSaved(nextSaved);
+          setSaved(
+            nextSaved,
+          );
 
           return nextSaved;
-        } catch {
-          setSaved(previous);
+        } catch (error) {
+          console.error(
+            'Favourite toggle failed:',
+            error,
+          );
+
+          setSaved(
+            previous,
+          );
 
           return previous;
         } finally {

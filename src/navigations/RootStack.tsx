@@ -31,11 +31,17 @@ import MainStack
 
 import {
   checkStatus,
+  removeRefreshToken,
+  persistLogin,
 } from '../util/localStorage';
 
 import {
-  initAuth,
+  saveToken,
 } from '../store/authSlice';
+
+import {
+  AuthAPI,
+} from '../api/auth';
 
 import type {
   RootState,
@@ -74,9 +80,7 @@ const RootStack = () => {
   ] = useState(false);
 
   const pendingDestination =
-    useRef<PendingDestination>(
-      null,
-    );
+    useRef<PendingDestination>(null);
 
   const dispatch =
     useDispatch();
@@ -87,20 +91,56 @@ const RootStack = () => {
         state.auth.isAuthenticated,
     );
 
+  /*
+   * Restore login session.
+   *
+   * IMPORTANT:
+   * The stored refresh token cannot be used
+   * as the access token.
+   *
+   * We must exchange it for a fresh token pair.
+   */
   useEffect(() => {
-    checkStatus()
-      .then(refreshToken => {
-        if (refreshToken) {
+    const restoreSession =
+      async () => {
+        try {
+          const storedRefreshToken =
+            await checkStatus();
+
+          if (!storedRefreshToken) {
+            return;
+          }
+
+          const tokens =
+            await AuthAPI.refresh(
+              storedRefreshToken,
+            );
+
           dispatch(
-            initAuth({
-              refreshToken,
+            saveToken({
+              accessToken:
+                tokens.accessToken,
+              refreshToken:
+                tokens.refreshToken,
             }),
           );
+
+          await persistLogin(
+            tokens.refreshToken,
+          );
+        } catch (error) {
+          console.log(
+            'Session restore failed:',
+            error,
+          );
+
+          await removeRefreshToken();
+        } finally {
+          setAuthLoading(false);
         }
-      })
-      .finally(() => {
-        setAuthLoading(false);
-      });
+      };
+
+    restoreSession();
   }, [dispatch]);
 
   const openProperty =
@@ -116,11 +156,9 @@ const RootStack = () => {
           'MainStack',
           {
             screen: 'AppStack',
-
             params: {
               screen:
                 'PropertyDetails',
-
               params: {
                 pid: propertyId,
               },
@@ -143,7 +181,6 @@ const RootStack = () => {
         'MainStack',
         {
           screen: 'AppStack',
-
           params: {
             screen:
               'MyBookings',
@@ -160,15 +197,12 @@ const RootStack = () => {
         return;
       }
 
+      /*
+       * MainStack decides whether to show
+       * AuthStack or AppStack.
+       */
       navigationRef.navigate(
         'MainStack',
-        {
-          screen: 'AuthStack',
-
-          params: {
-            screen: 'Login',
-          },
-        },
       );
     }, []);
 
@@ -259,14 +293,10 @@ const RootStack = () => {
     Linking.getInitialURL()
       .then(url => {
         if (url) {
-          handleDeepLink(
-            url,
-          );
+          handleDeepLink(url);
         }
       })
-      .catch(() => {
-        // Ignore invalid initial URL
-      });
+      .catch(() => {});
 
     const subscription =
       Linking.addEventListener(
@@ -278,9 +308,8 @@ const RootStack = () => {
         },
       );
 
-    return () => {
+    return () =>
       subscription.remove();
-    };
   }, [
     apiReady,
     authLoading,

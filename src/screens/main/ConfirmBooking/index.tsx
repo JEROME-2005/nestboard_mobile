@@ -218,19 +218,17 @@ const ConfirmBooking = () => {
 
     try {
       const booking =
-        await BookingAPI.createBooking(
-          roomId,
-          seatIndex,
-          dayjs(
-            fromDate,
-            'YYYY-MMM',
-          ).format(
-            'YYYY-MM',
-          ),
-          duration,
-          Number(total),
-        );
-
+  await BookingAPI.createBooking(
+    roomId,
+    seatIndex,
+    dayjs(
+      fromDate,
+      'YYYY-MMM',
+    ).format(
+      'YYYY-MM',
+    ),
+    duration,
+  );
       if (
         booking.status ===
         'PENDING'

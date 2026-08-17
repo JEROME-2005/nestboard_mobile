@@ -280,8 +280,7 @@ const PropertyDetails = () => {
           );
 
         const nextSaved =
-          response.saved ??
-          !previous;
+  response.isFavorite;
 
         setFavouriteSaved(
           nextSaved,

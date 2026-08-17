@@ -1,4 +1,6 @@
-import { apiClient } from './apiClient';
+import {
+  apiClient,
+} from './apiClient';
 
 export type BookingStatus =
   | 'PENDING'
@@ -17,6 +19,7 @@ export type Booking = {
   seatIndex: number;
 
   leaseStart: string;
+
   leaseEnd: string;
 
   duration: number;
@@ -24,97 +27,177 @@ export type Booking = {
   totalAmount: number;
 
   status: BookingStatus;
+
   paymentStatus: PaymentStatus;
 
   createdAt: string;
 
   room: {
     id: string;
+
     name: string;
 
     roomType: {
       id: string;
+
       name: string;
+
       pricePerMonth: string;
 
       property: {
         id: string;
+
         title: string;
+
         city?: string;
+
         imageUrl?: string;
       };
     };
   };
 };
 
-export const BookingAPI = {
-  createBooking: async (
-    roomId: string,
-    seatIndex: number,
-    leaseStart: string,
-    duration: number,
-    total: number,
-  ) => {
-    const response =
-      await apiClient.post<Booking>(
-        'bookings',
-        {
-          roomId,
-          seatIndex,
-          leaseStart,
-          duration,
-          total,
+const normalizeBooking = (
+  booking: any,
+): Booking => {
+  return {
+    id: booking.id,
+
+    seatIndex:
+      booking.seatNumber,
+
+    leaseStart:
+      booking.leaseStart,
+
+    leaseEnd:
+      booking.leaseEnd,
+
+    duration:
+      booking.durationMonths,
+
+    totalAmount:
+      Number(
+        booking.totalAmount,
+      ),
+
+    status:
+      booking.bookingStatus,
+
+    paymentStatus:
+      booking.paymentStatus,
+
+    createdAt:
+      booking.createdAt,
+
+    room: {
+      id:
+        booking.room.id,
+
+      name:
+        booking.room.roomLabel ??
+        booking.room.name ??
+        '',
+
+      roomType: {
+        id:
+          booking.room.roomType.id,
+
+        name:
+          booking.room.roomType.name,
+
+        pricePerMonth:
+          String(
+            booking.room.roomType
+              .pricePerMonth,
+          ),
+
+        property: {
+          id:
+            booking.room.roomType
+              .property.id,
+
+          title:
+            booking.room.roomType
+              .property.title,
+
+          city:
+            booking.room.roomType
+              .property.city,
+
+          imageUrl:
+            booking.room.roomType
+              .property.imageUrl,
         },
+      },
+    },
+  };
+};
+
+export const BookingAPI = {
+  createBooking:
+    async (
+      roomId: string,
+      seatIndex: number,
+      startMonth: string,
+      durationMonths: number,
+    ): Promise<Booking> => {
+      const response =
+        await apiClient.post(
+          'bookings',
+          {
+            roomId,
+
+            seatNumber:
+              seatIndex,
+
+            startMonth,
+
+            durationMonths,
+          },
+        );
+
+      return normalizeBooking(
+        response.data,
       );
+    },
 
-    return response.data;
-  },
+  confirmBooking:
+    async (
+      bookingId: string,
+    ): Promise<Booking> => {
+      const response =
+        await apiClient.post(
+          `bookings/${bookingId}/confirm`,
+        );
 
-  confirmBooking: async (
-    bookingId: string,
-  ) => {
-    const response =
-      await apiClient.post<Booking>(
-        `bookings/${bookingId}/confirm`,
+      return normalizeBooking(
+        response.data,
       );
+    },
 
-    return response.data;
-  },
+  cancelBooking:
+    async (
+      bookingId: string,
+    ): Promise<Booking> => {
+      const response =
+        await apiClient.post(
+          `bookings/${bookingId}/cancel`,
+        );
 
-  cancelBooking: async (
-    bookingId: string,
-  ) => {
-    const response =
-      await apiClient.post<Booking>(
-        `bookings/${bookingId}/cancel`,
+      return normalizeBooking(
+        response.data,
       );
+    },
 
-    return response.data;
-  },
+  getMyBookings:
+    async (): Promise<Booking[]> => {
+      const response =
+        await apiClient.get<any[]>(
+          'bookings/my',
+        );
 
-  getMyBookings: async () => {
-    const response =
-      await apiClient.get<Booking[]>(
-        'bookings/my',
+      return response.data.map(
+        normalizeBooking,
       );
-
-    return response.data;
-  },
-
-  // Backward-compatible wrapper
-  bookProperty: async (
-    roomId: string,
-    seatIndex: number,
-    date: string,
-    period: number,
-    total: string,
-  ) => {
-    return BookingAPI.createBooking(
-      roomId,
-      seatIndex,
-      date,
-      period,
-      parseFloat(total),
-    );
-  },
+    },
 };

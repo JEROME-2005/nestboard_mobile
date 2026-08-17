@@ -52,7 +52,9 @@ export default function LoginScreen() {
       }))
 
       //Save the refresh token inside the device storage
-      persistLogin(data.refreshToken)
+      await persistLogin(
+  data.refreshToken,
+);
       
 
     } catch (err: any) {

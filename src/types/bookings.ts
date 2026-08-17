@@ -15,6 +15,7 @@ export interface Booking {
   seatIndex: number;
 
   leaseStart: string;
+
   leaseEnd: string;
 
   duration: number;
@@ -22,23 +23,30 @@ export interface Booking {
   totalAmount: number;
 
   status: BookingStatus;
+
   paymentStatus: PaymentStatus;
 
   createdAt: string;
 
   room: {
     id: string;
+
     name: string;
 
     roomType: {
       id: string;
+
       name: string;
+
       pricePerMonth: string;
 
       property: {
         id: string;
+
         title: string;
+
         city?: string;
+
         imageUrl?: string;
       };
     };
