@@ -1,11 +1,11 @@
 import React, {
-  useEffect,
   useMemo,
   useState,
 } from 'react';
 
 import {
   Alert,
+  StyleSheet,
   View,
 } from 'react-native';
 
@@ -53,6 +53,10 @@ import {
   formatNumberIntoCurrency,
 } from '../../../util/common';
 
+import {
+  clearBooking,
+} from '../../../store/bookingSlice';
+
 const Months = [
   'Jan',
   'Feb',
@@ -93,7 +97,7 @@ const ConfirmBooking = () => {
           .currentProperty,
     );
 
-  const data =
+  const bookingData =
     useSelector(
       (
         state: RootState,
@@ -101,19 +105,56 @@ const ConfirmBooking = () => {
         state.booking.data,
     );
 
+  /*
+   * Selected room.
+   */
   const roomId =
-    data?.roomId;
+    bookingData?.roomId;
 
   const roomName =
-    data?.roomName;
+    bookingData?.roomName;
 
   const seatIndex =
-    data?.seatIndex;
+    bookingData?.seatIndex;
 
+  /*
+   * Convert the stored price safely.
+   *
+   * Handles:
+   *   "20000"
+   *   "20000.00"
+   *   "LKR 20000"
+   *   "LKR 20,000"
+   */
   const pricePerSeat =
-    Number(
-      data?.pricePerSeat ?? 0,
-    );
+    useMemo(() => {
+      const raw =
+        bookingData?.pricePerSeat;
+
+      if (
+        raw === undefined ||
+        raw === null
+      ) {
+        return 0;
+      }
+
+      const cleaned =
+        String(raw)
+          .replace(/LKR/gi, '')
+          .replace(/,/g, '')
+          .replace(/[^0-9.]/g, '');
+
+      const value =
+        Number(cleaned);
+
+      return Number.isFinite(
+        value,
+      )
+        ? value
+        : 0;
+    }, [
+      bookingData?.pricePerSeat,
+    ]);
 
   const [
     fromDate,
@@ -137,10 +178,13 @@ const ConfirmBooking = () => {
   const [
     error,
     setError,
-  ] = useState<string | null>(
-    null,
-  );
+  ] = useState<
+    string | null
+  >(null);
 
+  /*
+   * Calculate duration in months.
+   */
   const duration =
     useMemo(() => {
       const start =
@@ -155,14 +199,11 @@ const ConfirmBooking = () => {
           'YYYY-MMM',
         );
 
-      const value =
+      return Math.max(
         end.diff(
           start,
           'month',
-        );
-
-      return Math.max(
-        value,
+        ),
         0,
       );
     }, [
@@ -170,38 +211,130 @@ const ConfirmBooking = () => {
       toDate,
     ]);
 
+  /*
+   * Client-side preview only.
+   *
+   * Backend calculates the real
+   * booking total from its own
+   * room price.
+   */
   const total =
-    useMemo(
-      () =>
-        (
-          pricePerSeat *
-          duration
-        ).toFixed(2),
-      [
-        pricePerSeat,
-        duration,
-      ],
-    );
+    useMemo(() => {
+      return (
+        pricePerSeat *
+        duration
+      );
+    }, [
+      pricePerSeat,
+      duration,
+    ]);
 
-  useEffect(() => {
-    if (
-      duration === 0 &&
-      fromDate !== toDate
-    ) {
-      setToDate(fromDate);
-    }
-  }, [
-    duration,
-    fromDate,
-    toDate,
-  ]);
+  /*
+   * Don't allow the end date to
+   * be before the start date.
+   */
+  const handleStartDateChange =
+    (value: string) => {
+      setFromDate(value);
+
+      const start =
+        dayjs(
+          value,
+          'YYYY-MMM',
+        );
+
+      const end =
+        dayjs(
+          toDate,
+          'YYYY-MMM',
+        );
+
+      if (
+        end.isBefore(
+          start,
+          'month',
+        )
+      ) {
+        setToDate(value);
+      }
+    };
+
+  const handleEndDateChange =
+    (value: string) => {
+      const start =
+        dayjs(
+          fromDate,
+          'YYYY-MMM',
+        );
+
+      const end =
+        dayjs(
+          value,
+          'YYYY-MMM',
+        );
+
+      if (
+        end.isBefore(
+          start,
+          'month',
+        )
+      ) {
+        Alert.alert(
+          'Invalid lease period',
+          'The end month cannot be before the start month.',
+        );
+
+        return;
+      }
+
+      if (
+        end.isSame(
+          start,
+          'month',
+        )
+      ) {
+        Alert.alert(
+          'Invalid lease period',
+          'Please select at least 1 month.',
+        );
+
+        return;
+      }
+
+      setToDate(value);
+    };
 
   const bookNow = async () => {
+    if (!roomId) {
+      Alert.alert(
+        'Missing room',
+        'The selected room could not be found. Please select the room again.',
+      );
+
+      return;
+    }
+
     if (
-      !roomId ||
-      seatIndex === undefined ||
+      seatIndex ===
+        undefined ||
       seatIndex === null
     ) {
+      Alert.alert(
+        'Select a seat',
+        'Please go back and select an available seat.',
+      );
+
+      return;
+    }
+
+    if (
+      pricePerSeat <= 0
+    ) {
+      Alert.alert(
+        'Invalid room price',
+        'The room price could not be loaded. Please go back and select the room again.',
+      );
+
       return;
     }
 
@@ -210,6 +343,7 @@ const ConfirmBooking = () => {
         'Invalid lease',
         'Please select a valid lease period.',
       );
+
       return;
     }
 
@@ -217,47 +351,87 @@ const ConfirmBooking = () => {
     setError(null);
 
     try {
-      const booking =
-  await BookingAPI.createBooking(
-    roomId,
-    seatIndex,
-    dayjs(
-      fromDate,
-      'YYYY-MMM',
-    ).format(
-      'YYYY-MM',
-    ),
-    duration,
-  );
+      /*
+       * IMPORTANT:
+       *
+       * Backend expects:
+       *   roomId
+       *   seatNumber
+       *   startMonth
+       *   durationMonths
+       *
+       * Backend calculates totalAmount itself.
+       */
+      const pendingBooking =
+        await BookingAPI.createBooking(
+          roomId,
+
+          seatIndex,
+
+          dayjs(
+            fromDate,
+            'YYYY-MMM',
+          ).format(
+            'YYYY-MM',
+          ),
+
+          duration,
+        );
+
+      /*
+       * We have now created the
+       * PENDING booking.
+       *
+       * Confirm it.
+       */
       if (
-        booking.status ===
+        pendingBooking.status !==
         'PENDING'
       ) {
-        const confirmed =
-          await BookingAPI.confirmBooking(
-            booking.id,
-          );
+        throw new Error(
+          'Booking was not created as pending.',
+        );
+      }
 
-        if (
-          confirmed.status ===
-          'CONFIRMED'
-        ) {
-          Alert.alert(
-            'Booking confirmed',
-            'Your seat has been successfully reserved.',
-            [
-              {
-                text: 'View My Bookings',
-                onPress: () =>
-                  navigation.navigate(
-                    'MyBookings',
-                  ),
-              },
-            ],
-          );
-        }
+      const confirmed =
+        await BookingAPI.confirmBooking(
+          pendingBooking.id,
+        );
+
+      if (
+        confirmed.status ===
+        'CONFIRMED'
+      ) {
+        dispatch(
+          clearBooking(),
+        );
+
+        Alert.alert(
+          'Booking confirmed',
+          `Seat ${seatIndex} in ${roomName} has been successfully reserved.`,
+          [
+            {
+              text: 'View My Bookings',
+
+              onPress: () =>
+                navigation.navigate(
+                  'MyBookings',
+                ),
+            },
+          ],
+        );
+      } else {
+        throw new Error(
+          'Booking could not be confirmed.',
+        );
       }
     } catch (err: any) {
+      console.error(
+        'BOOKING ERROR:',
+        err?.response?.data ??
+          err,
+      );
+
       const status =
         err?.response?.status;
 
@@ -265,7 +439,7 @@ const ConfirmBooking = () => {
         status === 409
       ) {
         setError(
-          'This seat is no longer available. Please choose another seat.',
+          'This seat is no longer available.',
         );
 
         Alert.alert(
@@ -273,13 +447,18 @@ const ConfirmBooking = () => {
           'This seat was taken before your booking was completed. Please choose another available seat.',
         );
       } else {
-        setError(
-          'Unable to complete the booking. Please try again.',
-        );
+        const message =
+          err?.response?.data
+            ?.error?.message ??
+          err?.response?.data
+            ?.message ??
+          'Unable to complete your booking.';
+
+        setError(message);
 
         Alert.alert(
           'Booking failed',
-          'Unable to complete your booking. Please try again.',
+          message,
         );
       }
     } finally {
@@ -289,32 +468,20 @@ const ConfirmBooking = () => {
 
   return (
     <View
-      style={{
-        backgroundColor:
-          Colors.WHITE,
-        padding: 16,
-        flex: 1,
-        gap: 16,
-      }}
+      style={
+        styles.container
+      }
     >
       <ConfirmScreenHeader />
 
       <View
-        style={{
-          padding: 20,
-          elevation: 1,
-          borderRadius: 16,
-          backgroundColor:
-            Colors.WHITE,
-          gap: 24,
-        }}
+        style={styles.card}
       >
+        {/* PROPERTY */}
         <View
-          style={{
-            flexDirection: 'row',
-            justifyContent:
-              'space-between',
-          }}
+          style={
+            styles.row
+          }
         >
           <Typography
             variant="body"
@@ -325,17 +492,23 @@ const ConfirmBooking = () => {
             Property
           </Typography>
 
-          <Typography variant="h3">
-            {currentProperty?.title}
+          <Typography
+            variant="h3"
+            style={
+              styles.value
+            }
+          >
+            {currentProperty
+              ?.title ??
+              '-'}
           </Typography>
         </View>
 
+        {/* ROOM */}
         <View
-          style={{
-            flexDirection: 'row',
-            justifyContent:
-              'space-between',
-          }}
+          style={
+            styles.row
+          }
         >
           <Typography
             variant="body"
@@ -346,17 +519,22 @@ const ConfirmBooking = () => {
             Room
           </Typography>
 
-          <Typography variant="h3">
-            {roomName}
+          <Typography
+            variant="h3"
+            style={
+              styles.value
+            }
+          >
+            {roomName ??
+              '-'}
           </Typography>
         </View>
 
+        {/* SEAT */}
         <View
-          style={{
-            flexDirection: 'row',
-            justifyContent:
-              'space-between',
-          }}
+          style={
+            styles.row
+          }
         >
           <Typography
             variant="body"
@@ -367,11 +545,18 @@ const ConfirmBooking = () => {
             Seat
           </Typography>
 
-          <Typography variant="h3">
-            {seatIndex}
+          <Typography
+            variant="h3"
+            style={
+              styles.value
+            }
+          >
+            {seatIndex ??
+              '-'}
           </Typography>
         </View>
 
+        {/* LEASE */}
         <View>
           <Typography
             variant="body"
@@ -383,43 +568,38 @@ const ConfirmBooking = () => {
           </Typography>
 
           <View
-            style={{
-              flexDirection: 'row',
-              gap: 10,
-              alignItems:
-                'center',
-              marginTop: 10,
-            }}
+            style={
+              styles.pickerRow
+            }
           >
             <Picker
               selectedValue={
                 fromDate
               }
-              style={{
-                backgroundColor:
-                  '#eee',
-                width: '40%',
-              }}
-              onValueChange={value =>
-                setFromDate(
-                  value,
-                )
+              style={
+                styles.picker
+              }
+              onValueChange={
+                handleStartDateChange
               }
             >
-              {Years.map(year =>
-                Months.map(
-                  month => (
-                    <Picker.Item
-                      key={`${year}-${month}`}
-                      label={`${year}-${month}`}
-                      value={`${year}-${month}`}
-                    />
+              {Years.map(
+                year =>
+                  Months.map(
+                    month => (
+                      <Picker.Item
+                        key={`${year}-${month}-start`}
+                        label={`${year}-${month}`}
+                        value={`${year}-${month}`}
+                      />
+                    ),
                   ),
-                ),
               )}
             </Picker>
 
-            <Typography variant="h1">
+            <Typography
+              variant="h1"
+            >
               -
             </Typography>
 
@@ -427,46 +607,40 @@ const ConfirmBooking = () => {
               selectedValue={
                 toDate
               }
-              style={{
-                backgroundColor:
-                  '#eee',
-                width: '40%',
-              }}
-              onValueChange={value =>
-                setToDate(
-                  value,
-                )
+              style={
+                styles.picker
+              }
+              onValueChange={
+                handleEndDateChange
               }
             >
-              {Years.map(year =>
-                Months.map(
-                  month => (
-                    <Picker.Item
-                      key={`${year}-${month}`}
-                      label={`${year}-${month}`}
-                      value={`${year}-${month}`}
-                    />
+              {Years.map(
+                year =>
+                  Months.map(
+                    month => (
+                      <Picker.Item
+                        key={`${year}-${month}-end`}
+                        label={`${year}-${month}`}
+                        value={`${year}-${month}`}
+                      />
+                    ),
                   ),
-                ),
               )}
             </Picker>
           </View>
         </View>
 
+        {/* PRICE */}
         <View
-          style={{
-            height: 0.5,
-            backgroundColor:
-              Colors.BORDER_GRAY,
-          }}
+          style={
+            styles.divider
+          }
         />
 
         <View
-          style={{
-            flexDirection: 'row',
-            justifyContent:
-              'space-between',
-          }}
+          style={
+            styles.row
+          }
         >
           <Typography
             variant="body"
@@ -486,24 +660,28 @@ const ConfirmBooking = () => {
             {formatNumberIntoCurrency(
               pricePerSeat,
             )}{' '}
-            x {duration} months
+            × {duration}{' '}
+            months
           </Typography>
         </View>
 
+        {/* TOTAL */}
         <View
-          style={{
-            flexDirection: 'row',
-            justifyContent:
-              'space-between',
-          }}
+          style={
+            styles.totalRow
+          }
         >
-          <Typography variant="h1">
+          <Typography
+            variant="h1"
+          >
             Total
           </Typography>
 
-          <Typography variant="h1">
+          <Typography
+            variant="h1"
+          >
             {formatNumberIntoCurrency(
-              Number(total),
+              total,
             )}
           </Typography>
         </View>
@@ -511,9 +689,9 @@ const ConfirmBooking = () => {
         {error && (
           <Typography
             color="#EF4444"
-            style={{
-              textAlign: 'center',
-            }}
+            style={
+              styles.error
+            }
           >
             {error}
           </Typography>
@@ -523,31 +701,117 @@ const ConfirmBooking = () => {
       <RegularButton
         Icon={
           <Lock
-            color={Colors.WHITE}
+            color={
+              Colors.WHITE
+            }
           />
         }
         loading={booking}
         disable={
           booking ||
-          duration <= 0
+          duration <= 0 ||
+          pricePerSeat <= 0 ||
+          seatIndex ===
+            undefined
         }
-        onPress={bookNow}
-        text={
-          `Confirm LKR ${total}`
+        onPress={
+          bookNow
         }
+        text={`Confirm ${formatNumberIntoCurrency(
+          total,
+        )}`}
       />
 
       <Typography
         variant="caption"
-        style={{
-          textAlign: 'center',
-        }}
+        color={
+          Colors.TEXT_GRAY
+        }
+        style={
+          styles.footer
+        }
       >
-        Your booking will be confirmed
-        after successful reservation.
+        Your booking will be
+        created as pending and
+        confirmed securely.
       </Typography>
     </View>
   );
 };
 
 export default ConfirmBooking;
+
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        Colors.WHITE,
+      padding: 16,
+      gap: 16,
+    },
+
+    card: {
+      padding: 20,
+      elevation: 1,
+      borderRadius: 16,
+      backgroundColor:
+        Colors.WHITE,
+      gap: 24,
+    },
+
+    row: {
+      flexDirection:
+        'row',
+      justifyContent:
+        'space-between',
+      alignItems:
+        'center',
+      gap: 16,
+    },
+
+    value: {
+      flex: 1,
+      textAlign: 'right',
+    },
+
+    pickerRow: {
+      flexDirection:
+        'row',
+      gap: 10,
+      alignItems:
+        'center',
+      marginTop: 10,
+    },
+
+    picker: {
+      flex: 1,
+      backgroundColor:
+        '#EEEEEE',
+    },
+
+    divider: {
+      height: 0.5,
+      backgroundColor:
+        Colors.BORDER_GRAY,
+    },
+
+    totalRow: {
+      flexDirection:
+        'row',
+      justifyContent:
+        'space-between',
+      alignItems:
+        'center',
+    },
+
+    error: {
+      textAlign:
+        'center',
+    },
+
+    footer: {
+      textAlign:
+        'center',
+    },
+  });

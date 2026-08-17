@@ -57,147 +57,85 @@ export type Booking = {
   };
 };
 
-const normalizeBooking = (
-  booking: any,
-): Booking => {
-  return {
-    id: booking.id,
-
-    seatIndex:
-      booking.seatNumber,
-
-    leaseStart:
-      booking.leaseStart,
-
-    leaseEnd:
-      booking.leaseEnd,
-
-    duration:
-      booking.durationMonths,
-
-    totalAmount:
-      Number(
-        booking.totalAmount,
-      ),
-
-    status:
-      booking.bookingStatus,
-
-    paymentStatus:
-      booking.paymentStatus,
-
-    createdAt:
-      booking.createdAt,
-
-    room: {
-      id:
-        booking.room.id,
-
-      name:
-        booking.room.roomLabel ??
-        booking.room.name ??
-        '',
-
-      roomType: {
-        id:
-          booking.room.roomType.id,
-
-        name:
-          booking.room.roomType.name,
-
-        pricePerMonth:
-          String(
-            booking.room.roomType
-              .pricePerMonth,
-          ),
-
-        property: {
-          id:
-            booking.room.roomType
-              .property.id,
-
-          title:
-            booking.room.roomType
-              .property.title,
-
-          city:
-            booking.room.roomType
-              .property.city,
-
-          imageUrl:
-            booking.room.roomType
-              .property.imageUrl,
-        },
-      },
-    },
-  };
-};
-
 export const BookingAPI = {
-  createBooking:
-    async (
-      roomId: string,
-      seatIndex: number,
-      startMonth: string,
-      durationMonths: number,
-    ): Promise<Booking> => {
-      const response =
-        await apiClient.post(
-          'bookings',
-          {
-            roomId,
+  /*
+   * Creates a PENDING booking.
+   *
+   * IMPORTANT:
+   * The backend calculates totalAmount itself.
+   */
+  createBooking: async (
+    roomId: string,
+    seatNumber: number,
+    startMonth: string,
+    durationMonths: number,
+  ) => {
+    const response =
+      await apiClient.post<Booking>(
+        'bookings',
+        {
+          roomId,
 
-            seatNumber:
-              seatIndex,
+          seatNumber,
 
-            startMonth,
+          startMonth,
 
-            durationMonths,
-          },
-        );
-
-      return normalizeBooking(
-        response.data,
+          durationMonths,
+        },
       );
-    },
 
-  confirmBooking:
-    async (
-      bookingId: string,
-    ): Promise<Booking> => {
-      const response =
-        await apiClient.post(
-          `bookings/${bookingId}/confirm`,
-        );
+    return response.data;
+  },
 
-      return normalizeBooking(
-        response.data,
+  /*
+   * Confirms an existing pending booking.
+   */
+  confirmBooking: async (
+    bookingId: string,
+  ) => {
+    const response =
+      await apiClient.post<Booking>(
+        `bookings/${bookingId}/confirm`,
       );
-    },
 
-  cancelBooking:
-    async (
-      bookingId: string,
-    ): Promise<Booking> => {
-      const response =
-        await apiClient.post(
-          `bookings/${bookingId}/cancel`,
-        );
+    return response.data;
+  },
 
-      return normalizeBooking(
-        response.data,
+  cancelBooking: async (
+    bookingId: string,
+  ) => {
+    const response =
+      await apiClient.post<Booking>(
+        `bookings/${bookingId}/cancel`,
       );
-    },
 
-  getMyBookings:
-    async (): Promise<Booking[]> => {
-      const response =
-        await apiClient.get<any[]>(
-          'bookings/my',
-        );
+    return response.data;
+  },
 
-      return response.data.map(
-        normalizeBooking,
+  getMyBookings: async () => {
+    const response =
+      await apiClient.get<Booking[]>(
+        'bookings/my',
       );
-    },
+
+    return response.data;
+  },
+
+  /*
+   * Backward-compatible helper.
+   */
+  bookProperty: async (
+    roomId: string,
+    seatIndex: number,
+    date: string,
+    period: number,
+    _total: string,
+  ) => {
+    return BookingAPI.createBooking(
+      roomId,
+      seatIndex,
+      date,
+      period,
+    );
+  },
 };

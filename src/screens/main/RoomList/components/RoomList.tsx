@@ -2,19 +2,18 @@ import React from 'react';
 
 import {
   ScrollView,
-  StyleSheet,
-  View,
 } from 'react-native';
 
-import Typography
-  from '../../../../components/ui/Typography';
+import {
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+
+import RoomCard
+  from './RoomCard';
 
 import type {
   RoomType,
 } from '../../../../types/properties';
-
-import RoomCard
-  from './RoomCard';
 
 type Props = {
   roomType: RoomType;
@@ -23,101 +22,47 @@ type Props = {
 const RoomList = ({
   roomType,
 }: Props) => {
+  const insets =
+    useSafeAreaInsets();
+
   const rooms =
-    roomType.rooms ?? [];
+    Array.isArray(
+      roomType.rooms,
+    )
+      ? roomType.rooms
+      : [];
 
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={
-        styles.content
-      }
+      contentContainerStyle={{
+        gap: 16,
+
+        paddingHorizontal: 16,
+
+        paddingTop: 16,
+
+        paddingBottom:
+          insets.bottom + 30,
+      }}
       showsVerticalScrollIndicator={
         false
       }
     >
-      <View
-        style={styles.header}
-      >
-        <Typography variant="h1">
-          Available Rooms
-        </Typography>
-
-        <Typography
-          variant="caption"
-          style={styles.subtitle}
-        >
-          Select a room to continue
-          with your booking.
-        </Typography>
-      </View>
-
-      {rooms.length === 0 ? (
-        <View
-          style={styles.empty}
-        >
-          <Typography variant="h3">
-            No rooms available
-          </Typography>
-
-          <Typography
-            variant="caption"
-            style={styles.emptyText}
-          >
-            There are currently no
-            rooms available for this
-            room type.
-          </Typography>
-        </View>
-      ) : (
-        rooms.map(room => (
+      {rooms.map(
+        room => (
           <RoomCard
             key={
-              room.roomId ??
-              room.id
+              room.roomId
             }
             room={room}
             price={
               roomType.pricePerMonth
             }
           />
-        ))
+        ),
       )}
     </ScrollView>
   );
 };
 
 export default RoomList;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-
-  content: {
-    padding: 20,
-    paddingBottom: 120,
-  },
-
-  header: {
-    marginBottom: 20,
-  },
-
-  subtitle: {
-    marginTop: 6,
-    color: '#9293A7',
-  },
-
-  empty: {
-    padding: 30,
-    borderRadius: 18,
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-
-  emptyText: {
-    marginTop: 8,
-    textAlign: 'center',
-    color: '#9293A7',
-  },
-});

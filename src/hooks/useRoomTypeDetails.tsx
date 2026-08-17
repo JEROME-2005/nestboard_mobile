@@ -27,7 +27,8 @@ export const useRoomTypeDetails = (
       (
         state: RootState,
       ) =>
-        state.property.currentProperty,
+        state.property
+          .currentProperty,
     );
 
   const [
@@ -52,59 +53,59 @@ export const useRoomTypeDetails = (
   useEffect(() => {
     let cancelled = false;
 
-    const loadRoomType =
-      async () => {
-        if (
-          !currentProperty?.id ||
-          !roomTypeId
-        ) {
+    const load = async () => {
+      if (
+        !currentProperty?.id ||
+        !roomTypeId
+      ) {
+        setRoomType(
+          undefined,
+        );
+
+        setLoading(false);
+
+        return;
+      }
+
+      try {
+        setLoading(true);
+
+        setError(null);
+
+        const result =
+          await PropertyAPI.getSingleRoomType(
+            currentProperty.id,
+            roomTypeId,
+          );
+
+        if (!cancelled) {
+          setRoomType(
+            result,
+          );
+        }
+      } catch (err) {
+        console.error(
+          'Failed to load room type:',
+          err,
+        );
+
+        if (!cancelled) {
           setRoomType(
             undefined,
           );
 
-          setLoading(false);
-
-          return;
-        }
-
-        try {
-          setLoading(true);
-          setError(null);
-
-          const details =
-            await PropertyAPI.getSingleRoomType(
-              currentProperty.id,
-              roomTypeId,
-            );
-
-          if (!cancelled) {
-            setRoomType(
-              details,
-            );
-          }
-        } catch (err) {
-          console.error(
-            'Failed to load room type:',
-            err,
+          setError(
+            'Unable to load room details.',
           );
-
-          if (!cancelled) {
-            setRoomType(
-              undefined,
-            );
-
-            setError(
-              'Unable to load rooms.',
-            );
-          }
-        } finally {
-          if (!cancelled) {
-            setLoading(false);
-          }
         }
-      };
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
 
-    loadRoomType();
+    load();
 
     return () => {
       cancelled = true;

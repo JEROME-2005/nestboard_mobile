@@ -1,5 +1,6 @@
 import React, {
   useMemo,
+  useState,
 } from 'react';
 
 import {
@@ -14,23 +15,36 @@ import {
 } from '@react-navigation/native';
 
 import {
-  Wind,
+  Plus,
   User,
 } from 'lucide-react-native';
 
+import {
+  useDispatch,
+} from 'react-redux';
+
 import Typography
   from '../../../../components/ui/Typography';
+
+import RegularButton
+  from '../../../../components/ui/RegularButton';
 
 import {
   Colors,
 } from '../../../../constant/colors';
 
+import {
+  updateBookingDetails,
+} from '../../../../store/bookingSlice';
+
 import type {
   Room,
+  Seat,
 } from '../../../../types/properties';
 
 type Props = {
   room: Room;
+
   price: string;
 };
 
@@ -41,352 +55,493 @@ const RoomCard = ({
   const navigation: any =
     useNavigation();
 
+  const dispatch =
+    useDispatch();
+
+  const [
+    selectedSeat,
+    setSelectedSeat,
+  ] = useState<
+    number | null
+  >(null);
+
   /*
-   * Count seats that don't currently
-   * have a tenant.
+   * Always work with an array.
    */
+  const seats: Seat[] =
+    Array.isArray(room.booking)
+      ? room.booking
+      : [];
+
   const availableSeats =
-    useMemo(() => {
-      return room.booking.filter(
-        seat =>
-          !seat.tenant ||
-          seat.tenant.trim() === '',
-      );
-    }, [room.booking]);
-
-  /*
-   * Total seats.
-   *
-   * If booking data exists, use that.
-   * Otherwise fall back to seatCapacity.
-   */
-  const totalSeats =
-    room.booking.length > 0
-      ? room.booking.length
-      : room.seatCapacity;
-
-  const occupiedSeats =
-    Math.max(
-      totalSeats -
-        availableSeats.length,
-      0,
+    useMemo(
+      () =>
+        seats.filter(
+          seat =>
+            !seat.tenant ||
+            seat.tenant.trim() === '',
+        ),
+      [seats],
     );
 
-  const occupancyPercentage =
-    totalSeats > 0
-      ? Math.round(
-          (occupiedSeats /
-            totalSeats) *
-            100,
-        )
-      : 0;
+  const handleSeatPress = (
+    seatIndex: number,
+  ) => {
+    setSelectedSeat(
+      current =>
+        current === seatIndex
+          ? null
+          : seatIndex,
+    );
+  };
 
-  const hasAvailableSeats =
-    availableSeats.length > 0;
-
-  const handleViewRoom =
-    () => {
-      if (
-        !hasAvailableSeats
-      ) {
-        Alert.alert(
-          'Room Full',
-          'There are currently no available seats in this room.',
-        );
-
-        return;
-      }
-
-      /*
-       * Navigate to the booking /
-       * room-selection screen.
-       *
-       * The roomId is the important value
-       * needed by ConfirmBooking.
-       */
-      navigation.navigate(
-        'ConfirmBooking',
-        {
-          roomId:
-            room.roomId,
-
-          roomName:
-            room.roomName,
-
-          price,
-
-          room,
-        },
+  const bookThisSeat = () => {
+    if (
+      selectedSeat === null
+    ) {
+      Alert.alert(
+        'Select a seat',
+        'Please select an available seat first.',
       );
-    };
+
+      return;
+    }
+
+    /*
+     * Store exactly what ConfirmBooking
+     * needs.
+     */
+    dispatch(
+      updateBookingDetails({
+        roomId:
+          room.roomId,
+
+        roomName:
+          room.roomName,
+
+        seatIndex:
+          selectedSeat,
+
+        pricePerSeat:
+          String(price),
+
+        date: '',
+
+        duration: 0,
+      }),
+    );
+
+    navigation.navigate(
+      'ConfirmBooking',
+    );
+  };
+
+  const getInitials = (
+    tenant: string,
+  ) => {
+    if (!tenant?.trim()) {
+      return '';
+    }
+
+    const parts =
+      tenant.trim().split(/\s+/);
+
+    return parts
+      .slice(0, 2)
+      .map(
+        part =>
+          part.charAt(0),
+      )
+      .join('')
+      .toUpperCase();
+  };
 
   return (
     <View
       style={styles.card}
     >
-      {/* ROOM HEADER */}
+      {/* ROOM NAME */}
       <View
         style={styles.header}
       >
         <View
-          style={styles.titleContainer}
+          style={styles.headerText}
         >
           <Typography
             variant="h2"
-            style={styles.roomName}
           >
             {room.roomName}
           </Typography>
 
           <Typography
-            variant="h3"
-            style={styles.price}
+            variant="body"
+            color={
+              Colors.TEXT_GRAY
+            }
+            style={
+              styles.price
+            }
           >
-            LKR {price} / seat / month
+            LKR {price} / seat /
+            month
           </Typography>
         </View>
 
         <View
-          style={styles.acBadge}
+          style={styles.availableBadge}
         >
-          {room.hasAC ? (
-            <>
-              <Wind
-                size={15}
-                color={
-                  Colors.PRIMARY_COLOR
-                }
-              />
-
-              <Typography
-                variant="caption"
-                style={styles.acText}
-              >
-                AC
-              </Typography>
-            </>
-          ) : (
-            <Typography
-              variant="caption"
-              style={styles.acText}
-            >
-              None AC
-            </Typography>
-          )}
+          <Typography
+            variant="caption"
+            color="#10B981"
+          >
+            {availableSeats.length}{' '}
+            Available
+          </Typography>
         </View>
       </View>
 
-      {/* AVAILABILITY */}
+      {/* SEAT SECTION */}
       <View
-        style={styles.availabilityRow}
-      >
-        <Typography
-          variant="caption"
-          style={styles.availabilityText}
-        >
-          {availableSeats.length}{' '}
-          seats free
-        </Typography>
-
-        <Typography
-          variant="caption"
-          style={styles.availabilityText}
-        >
-          {occupancyPercentage}%
-          {' '}
-          filled
-        </Typography>
-      </View>
-
-      {/* PROGRESS BAR */}
-      <View
-        style={styles.progressBackground}
-      >
-        <View
-          style={[
-            styles.progressFill,
-            {
-              width: `${Math.min(
-                occupancyPercentage,
-                100,
-              )}%`,
-            },
-          ]}
-        />
-      </View>
-
-      {/* SEAT SUMMARY */}
-      <View
-        style={styles.seatSummary}
-      >
-        <User
-          size={17}
-          color={
-            Colors.SECONDARY_COLOR
-          }
-        />
-
-        <Typography
-          variant="caption"
-          style={
-            styles.seatSummaryText
-          }
-        >
-          {availableSeats.length}{' '}
-          of {totalSeats} seats
-          available
-        </Typography>
-      </View>
-
-      {/* VIEW ROOMS / BOOK */}
-      <TouchableOpacity
-        style={[
-          styles.button,
-          !hasAvailableSeats &&
-            styles.disabledButton,
-        ]}
-        onPress={
-          handleViewRoom
-        }
-        disabled={
-          !hasAvailableSeats
-        }
-        activeOpacity={0.8}
+        style={styles.seatSection}
       >
         <Typography
           variant="h3"
           style={
-            styles.buttonText
+            styles.seatTitle
           }
         >
-          {hasAvailableSeats
-            ? 'View Rooms'
-            : 'No Seats Available'}
+          Select a Seat
         </Typography>
 
-        {hasAvailableSeats && (
-          <Typography
-            variant="h3"
+        <Typography
+          variant="caption"
+          color={
+            Colors.TEXT_GRAY
+          }
+          style={
+            styles.seatHint
+          }
+        >
+          Tap an available seat
+          to select it.
+        </Typography>
+
+        {seats.length === 0 ? (
+          <View
             style={
-              styles.arrow
+              styles.noSeats
             }
           >
-            ›
-          </Typography>
+            <Typography
+              variant="body"
+              color={
+                Colors.TEXT_GRAY
+              }
+            >
+              No seat information
+              is available for this
+              room.
+            </Typography>
+          </View>
+        ) : (
+          <View
+            style={
+              styles.seatGrid
+            }
+          >
+            {seats.map(
+              seat => {
+                const isAvailable =
+                  !seat.tenant ||
+                  seat.tenant.trim() ===
+                    '';
+
+                const isSelected =
+                  selectedSeat ===
+                  seat.seatIndex;
+
+                if (!isAvailable) {
+                  return (
+                    <View
+                      key={
+                        seat.seatIndex
+                      }
+                      style={[
+                        styles.seat,
+                        styles.occupiedSeat,
+                      ]}
+                    >
+                      <User
+                        size={18}
+                        color="#FFFFFF"
+                      />
+
+                      <Typography
+                        variant="caption"
+                        color="#FFFFFF"
+                        style={
+                          styles.seatNumber
+                        }
+                      >
+                        {getInitials(
+                          seat.tenant,
+                        )}
+                      </Typography>
+                    </View>
+                  );
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={
+                      seat.seatIndex
+                    }
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      handleSeatPress(
+                        seat.seatIndex,
+                      )
+                    }
+                    style={[
+                      styles.seat,
+                      styles.availableSeat,
+                      isSelected &&
+                        styles.selectedSeat,
+                    ]}
+                  >
+                    {isSelected ? (
+                      <Typography
+                        variant="h3"
+                        color={
+                          Colors.PRIMARY_COLOR
+                        }
+                      >
+                        ✓
+                      </Typography>
+                    ) : (
+                      <Plus
+                        size={22}
+                        color={
+                          Colors.PRIMARY_COLOR
+                        }
+                      />
+                    )}
+
+                    <Typography
+                      variant="caption"
+                      color={
+                        Colors.PRIMARY_COLOR
+                      }
+                      style={
+                        styles.seatNumber
+                      }
+                    >
+                      {seat.seatIndex}
+                    </Typography>
+                  </TouchableOpacity>
+                );
+              },
+            )}
+          </View>
         )}
-      </TouchableOpacity>
+
+        {/* LEGEND */}
+        <View
+          style={styles.legend}
+        >
+          <View
+            style={styles.legendItem}
+          >
+            <View
+              style={[
+                styles.legendDot,
+                styles.legendAvailable,
+              ]}
+            />
+
+            <Typography
+              variant="caption"
+            >
+              Available
+            </Typography>
+          </View>
+
+          <View
+            style={styles.legendItem}
+          >
+            <View
+              style={[
+                styles.legendDot,
+                styles.legendOccupied,
+              ]}
+            />
+
+            <Typography
+              variant="caption"
+            >
+              Occupied
+            </Typography>
+          </View>
+        </View>
+      </View>
+
+      {/* BOOK BUTTON */}
+      <RegularButton
+        disable={
+          selectedSeat === null
+        }
+        text={
+          selectedSeat === null
+            ? 'Select a Seat'
+            : `Book Seat ${selectedSeat}`
+        }
+        onPress={
+          bookThisSeat
+        }
+        Icon={null}
+      />
     </View>
   );
 };
 
 export default RoomCard;
 
-const styles = StyleSheet.create({
-  card: {
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor:
-      Colors.WHITE,
-    marginBottom: 18,
-  },
+const styles =
+  StyleSheet.create({
+    card: {
+      borderRadius: 18,
+      backgroundColor:
+        Colors.WHITE,
+      padding: 20,
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
+      elevation: 2,
 
-  titleContainer: {
-    flex: 1,
-  },
+      shadowColor: '#000',
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      shadowOffset: {
+        width: 0,
+        height: 3,
+      },
+    },
 
-  roomName: {
-    color: '#17172B',
-    marginBottom: 8,
-  },
+    header: {
+      flexDirection:
+        'row',
+      justifyContent:
+        'space-between',
+      alignItems:
+        'flex-start',
+    },
 
-  price: {
-    color: '#17172B',
-  },
+    headerText: {
+      flex: 1,
+    },
 
-  acBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#FFF0E9',
-  },
+    price: {
+      marginTop: 6,
+    },
 
-  acText: {
-    color: Colors.PRIMARY_COLOR,
-    fontWeight: '600',
-  },
+    availableBadge: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor:
+        '#D1FAE5',
+    },
 
-  availabilityRow: {
-    marginTop: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+    seatSection: {
+      marginTop: 24,
+    },
 
-  availabilityText: {
-    color: '#9293A7',
-  },
+    seatTitle: {
+      marginBottom: 4,
+    },
 
-  progressBackground: {
-    height: 10,
-    marginTop: 8,
-    borderRadius: 5,
-    backgroundColor: '#EEEEF0',
-    overflow: 'hidden',
-  },
+    seatHint: {
+      marginBottom: 18,
+    },
 
-  progressFill: {
-    height: '100%',
-    borderRadius: 5,
-    backgroundColor:
-      Colors.PRIMARY_COLOR,
-  },
+    seatGrid: {
+      flexDirection:
+        'row',
+      flexWrap: 'wrap',
+      gap: 14,
+    },
 
-  seatSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 14,
-  },
+    seat: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
+      justifyContent:
+        'center',
+      alignItems:
+        'center',
+    },
 
-  seatSummaryText: {
-    color: '#6B7280',
-  },
+    availableSeat: {
+      borderWidth: 2,
+      borderColor:
+        Colors.PRIMARY_COLOR,
+      backgroundColor:
+        '#FFF5F0',
+    },
 
-  button: {
-    height: 56,
-    marginTop: 20,
-    borderRadius: 30,
-    backgroundColor:
-      Colors.PRIMARY_COLOR,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
+    selectedSeat: {
+      backgroundColor:
+        '#FFE1D5',
+      borderWidth: 3,
+      borderColor:
+        Colors.PRIMARY_COLOR,
+    },
 
-  disabledButton: {
-    opacity: 0.5,
-  },
+    occupiedSeat: {
+      backgroundColor:
+        '#704F3C',
+    },
 
-  buttonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
+    seatNumber: {
+      marginTop: 2,
+      fontWeight: '700',
+    },
 
-  arrow: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    lineHeight: 28,
-  },
-});
+    noSeats: {
+      padding: 20,
+      borderRadius: 12,
+      backgroundColor:
+        '#F8FAFC',
+      alignItems:
+        'center',
+    },
+
+    legend: {
+      flexDirection:
+        'row',
+      gap: 24,
+      marginTop: 20,
+    },
+
+    legendItem: {
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
+      gap: 7,
+    },
+
+    legendDot: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+    },
+
+    legendAvailable: {
+      backgroundColor:
+        Colors.PRIMARY_COLOR,
+    },
+
+    legendOccupied: {
+      backgroundColor:
+        '#704F3C',
+    },
+  });

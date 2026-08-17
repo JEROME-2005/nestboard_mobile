@@ -1,7 +1,3 @@
-import {
-  PropertyType,
-} from './common';
-
 export type PropertyListResponse = {
   data: PropertyItem[];
 
@@ -17,69 +13,38 @@ export type PropertyListResponse = {
 
 export type PropertyItem = {
   id: string;
-
   title: string;
-
   location: string;
-
   type: string;
-
   price: string;
-
   rating: number;
-
   image: string;
-
   lat: number;
-
   lng: number;
 
-  /*
-   * Whether this property is favourited
-   * by the current logged-in user.
-   */
   saved?: boolean;
 };
 
+export interface Seat {
+  seatIndex: number;
+  tenant: string;
+  tenantBio: string;
+}
+
 export interface Room {
-  /*
-   * Standard room fields
-   */
-  id: string;
-
-  propertyId: string;
-
-  name: string;
-
-  pricePerMonth: string;
-
-  seatCapacity: number;
-
-  hasAC: boolean;
-
-  createdAt: string;
-
-  /*
-   * Room-list / booking fields
-   */
   roomId: string;
-
   roomName: string;
-
   booking: Seat[];
 }
 
 export interface Property {
   id: string;
-
   vendorId: string;
 
   title: string;
-
   description: string;
 
   address: string;
-
   city: string;
 
   type:
@@ -94,7 +59,6 @@ export interface Property {
   amenities: string[];
 
   latitude: number;
-
   longitude: number;
 
   imageUrl: string;
@@ -105,10 +69,6 @@ export interface Property {
 
   createdAt: string;
 
-  /*
-   * Backend returns isFavorite.
-   * PropertyAPI converts it to saved.
-   */
   saved?: boolean;
 }
 
@@ -130,14 +90,6 @@ export interface RoomType {
   hasAC: boolean;
 
   rooms: Room[];
-}
-
-export interface Seat {
-  seatIndex: number;
-
-  tenant: string;
-
-  tenantBio: string;
 }
 
 export interface PropertyLocation {
