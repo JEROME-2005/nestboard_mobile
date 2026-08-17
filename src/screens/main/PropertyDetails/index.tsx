@@ -486,14 +486,21 @@ const PropertyDetails = () => {
             )
           }
           onViewRooms={(
-            id,
-            roomTypeName,
-          ) => {
-            /*
-             * Keep your existing room navigation
-             * logic here.
-             */
-          }}
+  roomTypeId,
+  roomTypeName,
+) => {
+  nav.navigate(
+    'RoomTypeDetails',
+    {
+      roomTypeId,
+      roomTypeName,
+      location:
+        currentProperty.address ??
+        currentProperty.city ??
+        '',
+    },
+  );
+}}
         />
       </View>
     </ScreenWrapper>

@@ -1,11 +1,22 @@
+import React, {
+  useMemo,
+} from 'react';
+
 import {
-  View,
+  Alert,
+  StyleSheet,
   TouchableOpacity,
+  View,
 } from 'react-native';
 
-import React, {
-  useState,
-} from 'react';
+import {
+  useNavigation,
+} from '@react-navigation/native';
+
+import {
+  Wind,
+  User,
+} from 'lucide-react-native';
 
 import Typography
   from '../../../../components/ui/Typography';
@@ -14,28 +25,9 @@ import {
   Colors,
 } from '../../../../constant/colors';
 
-import RegularButton
-  from '../../../../components/ui/RegularButton';
-
-import {
+import type {
   Room,
 } from '../../../../types/properties';
-
-import {
-  Plus,
-} from 'lucide-react-native';
-
-import {
-  useNavigation,
-} from '@react-navigation/native';
-
-import {
-  useDispatch,
-} from 'react-redux';
-
-import {
-  updateBookingDetails,
-} from '../../../../store/bookingSlice';
 
 type Props = {
   room: Room;
@@ -46,234 +38,355 @@ const RoomCard = ({
   room,
   price,
 }: Props) => {
-  const [
-    selectedSeat,
-    setSelectedSeat,
-  ] = useState<
-    number | null
-  >(null);
-
   const navigation: any =
     useNavigation();
 
-  const dispatch =
-    useDispatch();
-
+  /*
+   * Count seats that don't currently
+   * have a tenant.
+   */
   const availableSeats =
-    room.booking.filter(
-      seat =>
-        !seat.tenant,
+    useMemo(() => {
+      return room.booking.filter(
+        seat =>
+          !seat.tenant ||
+          seat.tenant.trim() === '',
+      );
+    }, [room.booking]);
+
+  /*
+   * Total seats.
+   *
+   * If booking data exists, use that.
+   * Otherwise fall back to seatCapacity.
+   */
+  const totalSeats =
+    room.booking.length > 0
+      ? room.booking.length
+      : room.seatCapacity;
+
+  const occupiedSeats =
+    Math.max(
+      totalSeats -
+        availableSeats.length,
+      0,
     );
 
-  const bookThisSeat = () => {
-    if (
-      selectedSeat === null
-    ) {
-      return;
-    }
+  const occupancyPercentage =
+    totalSeats > 0
+      ? Math.round(
+          (occupiedSeats /
+            totalSeats) *
+            100,
+        )
+      : 0;
 
-    dispatch(
-      updateBookingDetails({
-        date: '',
-        duration: 0,
-        roomId: room.roomId,
-        roomName: room.roomName,
-        seatIndex: selectedSeat,
-        pricePerSeat: price,
-      }),
-    );
+  const hasAvailableSeats =
+    availableSeats.length > 0;
 
-    navigation.navigate(
-      'ConfirmBooking',
-    );
-  };
+  const handleViewRoom =
+    () => {
+      if (
+        !hasAvailableSeats
+      ) {
+        Alert.alert(
+          'Room Full',
+          'There are currently no available seats in this room.',
+        );
 
-  const extractInitials = (
-    tenant: string,
-  ) => {
-    if (!tenant) {
-      return '';
-    }
+        return;
+      }
 
-    const parts =
-      tenant.trim().split(' ');
+      /*
+       * Navigate to the booking /
+       * room-selection screen.
+       *
+       * The roomId is the important value
+       * needed by ConfirmBooking.
+       */
+      navigation.navigate(
+        'ConfirmBooking',
+        {
+          roomId:
+            room.roomId,
 
-    if (parts.length === 1) {
-      return parts[0]!
-        .charAt(0)
-        .toUpperCase();
-    }
+          roomName:
+            room.roomName,
 
-    return (
-      parts[0]!.charAt(0) +
-      parts[1]!.charAt(0)
-    ).toUpperCase();
-  };
+          price,
+
+          room,
+        },
+      );
+    };
 
   return (
     <View
-      style={{
-        borderRadius: 16,
-        elevation: 2,
-        backgroundColor:
-          Colors.WHITE,
-        padding: 24,
-        gap: 16,
-      }}
+      style={styles.card}
     >
-      <Typography variant="h2">
-        {room.roomName}
-      </Typography>
-
+      {/* ROOM HEADER */}
       <View
-        style={{
-          flexDirection: 'row',
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
-        {room.booking.map(
-          seat => {
-            const isAvailable =
-              !seat.tenant;
-
-            const selected =
-              selectedSeat ===
-              seat.seatIndex;
-
-            if (!isAvailable) {
-              return (
-                <View
-                  key={
-                    seat.seatIndex
-                  }
-                  style={{
-                    width: 48,
-                    height: 48,
-                    backgroundColor:
-                      '#704F3C',
-                    justifyContent:
-                      'center',
-                    alignItems:
-                      'center',
-                    borderRadius: 100,
-                  }}
-                >
-                  <Typography variant="button">
-                    {extractInitials(
-                      seat.tenant,
-                    )}
-                  </Typography>
-                </View>
-              );
-            }
-
-            return (
-              <TouchableOpacity
-                key={
-                  seat.seatIndex
-                }
-                onPress={() =>
-                  setSelectedSeat(
-                    seat.seatIndex,
-                  )
-                }
-                style={{
-                  width: 48,
-                  height: 48,
-                  justifyContent:
-                    'center',
-                  alignItems:
-                    'center',
-                  borderRadius: 100,
-                  borderColor:
-                    selected
-                      ? Colors.PRIMARY_COLOR
-                      : Colors.BORDER_GRAY,
-                  borderWidth:
-                    selected
-                      ? 2
-                      : 1.6,
-                  backgroundColor:
-                    selected
-                      ? `${Colors.PRIMARY_COLOR}20`
-                      : 'transparent',
-                }}
-              >
-                <Plus
-                  color={
-                    selected
-                      ? Colors.PRIMARY_COLOR
-                      : Colors.BORDER_GRAY
-                  }
-                  width={20}
-                  height={20}
-                />
-              </TouchableOpacity>
-            );
-          },
-        )}
-      </View>
-
-      <View>
-        {room.booking.map(
-          seat =>
-            seat.tenant ? (
-              <Typography
-                key={
-                  seat.seatIndex
-                }
-                variant="subtitle"
-                color={
-                  Colors.TEXT_GRAY
-                }
-              >
-                {seat.tenant}
-              </Typography>
-            ) : null,
-        )}
-      </View>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent:
-            'space-between',
-          alignItems: 'center',
-        }}
+        style={styles.header}
       >
         <View
-          style={{
-            backgroundColor:
-              '#D1FAE5',
-            height: 40,
-            justifyContent:
-              'center',
-            alignItems:
-              'center',
-            paddingHorizontal: 16,
-            borderRadius: 100,
-          }}
+          style={styles.titleContainer}
         >
-          <Typography color="#10B981">
-            {availableSeats.length}{' '}
-            Available
+          <Typography
+            variant="h2"
+            style={styles.roomName}
+          >
+            {room.roomName}
+          </Typography>
+
+          <Typography
+            variant="h3"
+            style={styles.price}
+          >
+            LKR {price} / seat / month
           </Typography>
         </View>
 
-        <RegularButton
-          disable={
-            selectedSeat === null
-          }
-          text="Book this seat"
-          onPress={
-            bookThisSeat
-          }
-          Icon={null}
+        <View
+          style={styles.acBadge}
+        >
+          {room.hasAC ? (
+            <>
+              <Wind
+                size={15}
+                color={
+                  Colors.PRIMARY_COLOR
+                }
+              />
+
+              <Typography
+                variant="caption"
+                style={styles.acText}
+              >
+                AC
+              </Typography>
+            </>
+          ) : (
+            <Typography
+              variant="caption"
+              style={styles.acText}
+            >
+              None AC
+            </Typography>
+          )}
+        </View>
+      </View>
+
+      {/* AVAILABILITY */}
+      <View
+        style={styles.availabilityRow}
+      >
+        <Typography
+          variant="caption"
+          style={styles.availabilityText}
+        >
+          {availableSeats.length}{' '}
+          seats free
+        </Typography>
+
+        <Typography
+          variant="caption"
+          style={styles.availabilityText}
+        >
+          {occupancyPercentage}%
+          {' '}
+          filled
+        </Typography>
+      </View>
+
+      {/* PROGRESS BAR */}
+      <View
+        style={styles.progressBackground}
+      >
+        <View
+          style={[
+            styles.progressFill,
+            {
+              width: `${Math.min(
+                occupancyPercentage,
+                100,
+              )}%`,
+            },
+          ]}
         />
       </View>
+
+      {/* SEAT SUMMARY */}
+      <View
+        style={styles.seatSummary}
+      >
+        <User
+          size={17}
+          color={
+            Colors.SECONDARY_COLOR
+          }
+        />
+
+        <Typography
+          variant="caption"
+          style={
+            styles.seatSummaryText
+          }
+        >
+          {availableSeats.length}{' '}
+          of {totalSeats} seats
+          available
+        </Typography>
+      </View>
+
+      {/* VIEW ROOMS / BOOK */}
+      <TouchableOpacity
+        style={[
+          styles.button,
+          !hasAvailableSeats &&
+            styles.disabledButton,
+        ]}
+        onPress={
+          handleViewRoom
+        }
+        disabled={
+          !hasAvailableSeats
+        }
+        activeOpacity={0.8}
+      >
+        <Typography
+          variant="h3"
+          style={
+            styles.buttonText
+          }
+        >
+          {hasAvailableSeats
+            ? 'View Rooms'
+            : 'No Seats Available'}
+        </Typography>
+
+        {hasAvailableSeats && (
+          <Typography
+            variant="h3"
+            style={
+              styles.arrow
+            }
+          >
+            ›
+          </Typography>
+        )}
+      </TouchableOpacity>
     </View>
   );
 };
 
 export default RoomCard;
+
+const styles = StyleSheet.create({
+  card: {
+    padding: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor:
+      Colors.WHITE,
+    marginBottom: 18,
+  },
+
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+
+  titleContainer: {
+    flex: 1,
+  },
+
+  roomName: {
+    color: '#17172B',
+    marginBottom: 8,
+  },
+
+  price: {
+    color: '#17172B',
+  },
+
+  acBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#FFF0E9',
+  },
+
+  acText: {
+    color: Colors.PRIMARY_COLOR,
+    fontWeight: '600',
+  },
+
+  availabilityRow: {
+    marginTop: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+
+  availabilityText: {
+    color: '#9293A7',
+  },
+
+  progressBackground: {
+    height: 10,
+    marginTop: 8,
+    borderRadius: 5,
+    backgroundColor: '#EEEEF0',
+    overflow: 'hidden',
+  },
+
+  progressFill: {
+    height: '100%',
+    borderRadius: 5,
+    backgroundColor:
+      Colors.PRIMARY_COLOR,
+  },
+
+  seatSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+  },
+
+  seatSummaryText: {
+    color: '#6B7280',
+  },
+
+  button: {
+    height: 56,
+    marginTop: 20,
+    borderRadius: 30,
+    backgroundColor:
+      Colors.PRIMARY_COLOR,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  disabledButton: {
+    opacity: 0.5,
+  },
+
+  buttonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  arrow: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    lineHeight: 28,
+  },
+});
