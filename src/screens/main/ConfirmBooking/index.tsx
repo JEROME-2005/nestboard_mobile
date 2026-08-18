@@ -445,224 +445,372 @@ const ConfirmBooking = () => {
    * ----------------------------------------------------------
    */
   const bookNow =
-    async () => {
-      if (
-        pendingBookingId
-      ) {
-        return;
-      }
+  async () => {
+    if (!roomId) {
+      Alert.alert(
+        'Missing room',
+        'The selected room could not be found. Please select the room again.',
+      );
 
-      if (!roomId) {
-        Alert.alert(
-          'Missing room',
-          'The selected room could not be found. Please select the room again.',
+      return;
+    }
+
+    if (
+      seatIndex ===
+        undefined ||
+      seatIndex === null
+    ) {
+      Alert.alert(
+        'Select a seat',
+        'Please go back and select an available seat.',
+      );
+
+      return;
+    }
+
+    if (
+      pricePerSeat <= 0
+    ) {
+      Alert.alert(
+        'Invalid room price',
+        'The room price could not be loaded. Please go back and select the room again.',
+      );
+
+      return;
+    }
+
+    if (
+      duration <= 0
+    ) {
+      Alert.alert(
+        'Invalid lease',
+        'Please select a valid lease period.',
+      );
+
+      return;
+    }
+
+    /*
+     * Do not allow a past lease.
+     */
+    const start =
+      dayjs(
+        fromDate,
+        'YYYY-MMM',
+      );
+
+    const currentMonth =
+      dayjs().startOf('month');
+
+    if (
+      start.isBefore(
+        currentMonth,
+        'month',
+      )
+    ) {
+      Alert.alert(
+        'Invalid lease month',
+        'The lease start month cannot be in the past.',
+      );
+
+      return;
+    }
+
+    setBooking(true);
+    setError(null);
+
+    try {
+      /*
+       * Backend expects:
+       *
+       * roomId
+       * seatNumber
+       * startMonth
+       * durationMonths
+       */
+      const response =
+        await BookingAPI.createBooking(
+          roomId,
+          seatIndex,
+          start.format(
+            'YYYY-MM',
+          ),
+          duration,
         );
 
-        return;
-      }
+      console.log(
+        'BOOKING CREATE RESPONSE:',
+        JSON.stringify(
+          response,
+          null,
+          2,
+        ),
+      );
 
-      if (
-        seatIndex ===
-          undefined ||
-        seatIndex === null
-      ) {
-        Alert.alert(
-          'Select a seat',
-          'Please go back and select an available seat.',
+      /*
+       * IMPORTANT:
+       *
+       * Different API clients may return:
+       *
+       * response
+       * response.data
+       * response.booking
+       * response.data.booking
+       *
+       * Resolve all common shapes.
+       */
+      const bookingRecord =
+        (response as any)?.booking ??
+        (response as any)?.data?.booking ??
+        (response as any)?.data ??
+        response;
+
+      console.log(
+        'BOOKING RECORD:',
+        JSON.stringify(
+          bookingRecord,
+          null,
+          2,
+        ),
+      );
+
+      /*
+       * Get the booking ID from
+       * whichever response shape
+       * the API returned.
+       */
+      const bookingId =
+        bookingRecord?.id ??
+        bookingRecord?.bookingId ??
+        bookingRecord?.booking?.id ??
+        (response as any)?.id ??
+        (response as any)?.data?.id;
+
+      /*
+       * If there is no booking ID,
+       * THEN the server response is
+       * genuinely unusable.
+       */
+      if (!bookingId) {
+        console.error(
+          'BOOKING RESPONSE HAS NO ID:',
+          response,
         );
 
-        return;
+        throw new Error(
+          'The booking was created but the server did not return a booking ID.',
+        );
       }
 
+      /*
+       * If the API returned a status,
+       * make sure it is pending.
+       *
+       * We DO NOT require status to
+       * exist because some API wrappers
+       * may return only the booking ID.
+       */
+      const bookingStatus =
+        bookingRecord?.status ??
+        (response as any)?.status ??
+        (response as any)?.data?.status;
+
+      console.log(
+        'BOOKING ID:',
+        bookingId,
+      );
+
+      console.log(
+        'BOOKING STATUS:',
+        bookingStatus,
+      );
+
+      /*
+       * If the backend explicitly says
+       * something other than PENDING,
+       * stop.
+       */
       if (
-        pricePerSeat <= 0
+        bookingStatus &&
+        bookingStatus !==
+          'PENDING'
       ) {
-        Alert.alert(
-          'Invalid room price',
-          'The room price could not be loaded. Please go back and select the room again.',
+        throw new Error(
+          `Booking returned unexpected status: ${bookingStatus}`,
+        );
+      }
+
+      /*
+       * IMPORTANT:
+       *
+       * We DO NOT call confirmBooking()
+       * here.
+       *
+       * The booking must remain PENDING
+       * until the user confirms it.
+       */
+
+      const createdAt =
+        Date.now();
+
+      setPendingBookingId(
+        String(
+          bookingId,
+        ),
+      );
+
+      setPendingCreatedAt(
+        createdAt,
+      );
+
+      /*
+       * Prefer backend expiry time
+       * if the API provides it.
+       */
+      const expiresAt =
+        bookingRecord?.expiresAt ??
+        bookingRecord?.paymentExpiresAt ??
+        bookingRecord?.expires_at ??
+        (response as any)
+          ?.expiresAt ??
+        (response as any)
+          ?.data?.expiresAt;
+
+      if (expiresAt) {
+        const remaining =
+          Math.max(
+            0,
+            Math.ceil(
+              (
+                new Date(
+                  expiresAt,
+                ).getTime() -
+                Date.now()
+              ) / 1000,
+            ),
+          );
+
+        setSecondsRemaining(
+          remaining > 0
+            ? remaining
+            : CLIENT_CONFIRMATION_SECONDS,
+        );
+      } else {
+        /*
+         * Your requested one-minute
+         * client confirmation window.
+         */
+        setSecondsRemaining(
+          CLIENT_CONFIRMATION_SECONDS,
+        );
+      }
+
+      /*
+       * SUCCESS
+       */
+      Alert.alert(
+        'Booking pending',
+        `Seat ${seatIndex} in ${
+          roomName ??
+          'the selected room'
+        } is now held for you. Confirm it before the timer expires.`,
+      );
+    } catch (
+      err: any
+    ) {
+      console.error(
+        'BOOKING CREATE ERROR:',
+        err?.response?.data ??
+          err,
+      );
+
+      const status =
+        err?.response?.status;
+
+      const code =
+        err?.response?.data
+          ?.error?.code ??
+        err?.response?.data
+          ?.code;
+
+      const message =
+        err?.response?.data
+          ?.error?.message ??
+        err?.response?.data
+          ?.message ??
+        err?.message ??
+        'Unable to complete your booking.';
+
+      /*
+       * Seat conflict.
+       */
+      if (
+        status === 409 ||
+        code === 'CONFLICT'
+      ) {
+        setError(
+          'This seat is no longer available for the selected lease period.',
         );
 
-        return;
-      }
-
-      if (
-        duration <= 0
-      ) {
         Alert.alert(
-          'Invalid lease',
-          'Please select a valid lease period.',
+          'Seat unavailable',
+          'This seat was just taken or is already reserved for this lease period. Please go back and choose another available seat.',
         );
 
         return;
       }
 
       /*
-       * Never submit a past lease.
+       * Authentication error.
        */
-      const start =
-        dayjs(
-          fromDate,
-          'YYYY-MMM',
+      if (
+        status === 401
+      ) {
+        setError(
+          'Your session has expired. Please sign in again.',
         );
 
-      const currentMonth =
-        dayjs().startOf('month');
-
-      if (
-        start.isBefore(
-          currentMonth,
-          'month',
-        )
-      ) {
         Alert.alert(
-          'Invalid lease month',
-          'The lease start month cannot be in the past.',
+          'Session expired',
+          'Please sign in again and retry the booking.',
         );
 
         return;
       }
 
-      setBooking(true);
-      setError(null);
-
-      try {
-        /*
-         * Backend contract:
-         *
-         * roomId
-         * seatNumber
-         * startMonth
-         * durationMonths
-         */
-        const pendingBooking =
-          await BookingAPI.createBooking(
-            roomId,
-            seatIndex,
-            start.format(
-              'YYYY-MM',
-            ),
-            duration,
-          );
-
-        /*
-         * The booking MUST be PENDING.
-         *
-         * DO NOT confirm it immediately.
-         */
-        if (
-          pendingBooking?.status !==
-          'PENDING'
-        ) {
-          throw new Error(
-            'The server did not create a pending booking.',
-          );
-        }
-
-        /*
-         * Store pending booking.
-         */
-        const createdAt =
-          Date.now();
-
-        setPendingBookingId(
-          pendingBooking.id,
+      /*
+       * Validation error.
+       */
+      if (
+        status === 400
+      ) {
+        setError(
+          message,
         );
-
-        setPendingCreatedAt(
-          createdAt,
-        );
-
-        /*
-         * Prefer backend expiresAt
-         * when available.
-         */
-        const backendExpiresAt =
-          (
-            pendingBooking as any
-          )?.expiresAt;
-
-        if (
-          backendExpiresAt
-        ) {
-          const remaining =
-            Math.max(
-              0,
-              Math.ceil(
-                (
-                  new Date(
-                    backendExpiresAt,
-                  ).getTime() -
-                  Date.now()
-                ) / 1000,
-              ),
-            );
-
-          setSecondsRemaining(
-            remaining ||
-              CLIENT_CONFIRMATION_SECONDS,
-          );
-        } else {
-          setSecondsRemaining(
-            CLIENT_CONFIRMATION_SECONDS,
-          );
-        }
 
         Alert.alert(
-          'Booking pending',
-          `Seat ${seatIndex} in ${roomName ?? 'the selected room'} is now held for you. Confirm the booking before the timer expires.`,
-        );
-      } catch (
-        err: any
-      ) {
-        console.error(
-          'BOOKING CREATE ERROR:',
-          err?.response?.data ??
-            err,
+          'Invalid booking',
+          message,
         );
 
-        const status =
-          err?.response?.status;
-
-        const code =
-          err?.response?.data
-            ?.error?.code ??
-          err?.response?.data
-            ?.code;
-
-        const message =
-          err?.response?.data
-            ?.error?.message ??
-          err?.response?.data
-            ?.message ??
-          err?.message ??
-          'Unable to complete your booking.';
-
-        if (
-          status === 409 ||
-          code === 'CONFLICT'
-        ) {
-          setError(
-            'This seat is no longer available for the selected lease period.',
-          );
-
-          Alert.alert(
-            'Seat unavailable',
-            'This seat was just taken or is already reserved for this lease period. Please go back and choose another available seat.',
-          );
-        } else {
-          setError(
-            message,
-          );
-
-          Alert.alert(
-            'Booking failed',
-            message,
-          );
-        }
-      } finally {
-        setBooking(false);
+        return;
       }
-    };
+
+      /*
+       * Generic server error.
+       */
+      setError(
+        message,
+      );
+
+      Alert.alert(
+        'Booking failed',
+        message,
+      );
+    } finally {
+      setBooking(false);
+    }
+  };
 
   /*
    * ----------------------------------------------------------
