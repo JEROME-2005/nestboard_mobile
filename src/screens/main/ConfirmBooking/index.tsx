@@ -1,4 +1,5 @@
 import React, {
+  useEffect,
   useMemo,
   useState,
 } from 'react';
@@ -75,11 +76,24 @@ const Months = [
 const currentYear =
   new Date().getFullYear();
 
+const currentMonthIndex =
+  new Date().getMonth();
+
 const Years = [
   currentYear,
   currentYear + 1,
   currentYear + 2,
 ];
+
+/*
+ * NestBoard booking confirmation window.
+ *
+ * The UI uses one minute as requested.
+ *
+ * If the backend returns expiresAt,
+ * that value is preferred.
+ */
+const CLIENT_CONFIRMATION_SECONDS = 60;
 
 const ConfirmBooking = () => {
   const navigation: any =
@@ -118,13 +132,7 @@ const ConfirmBooking = () => {
     bookingData?.seatIndex;
 
   /*
-   * Convert the stored price safely.
-   *
-   * Handles:
-   *   "20000"
-   *   "20000.00"
-   *   "LKR 20000"
-   *   "LKR 20,000"
+   * Convert price safely.
    */
   const pricePerSeat =
     useMemo(() => {
@@ -156,18 +164,57 @@ const ConfirmBooking = () => {
       bookingData?.pricePerSeat,
     ]);
 
+  /*
+   * IMPORTANT FIX:
+   *
+   * Start from the CURRENT month,
+   * not January.
+   *
+   * Before:
+   *   2026-Jan
+   *
+   * Now:
+   *   2026-Aug
+   */
+  const initialStart =
+    `${currentYear}-${Months[currentMonthIndex]}`;
+
+  /*
+   * Default lease is 3 months.
+   *
+   * Example:
+   * August 2026 -> November 2026
+   */
+  const initialEndDate =
+    dayjs(
+      `${currentYear}-${String(
+        currentMonthIndex + 1,
+      ).padStart(2, '0')}-01`,
+    )
+      .add(3, 'month')
+      .format('YYYY-MM');
+
+  const initialEnd =
+    `${Number(
+      initialEndDate.split('-')[0],
+    )}-${Months[
+      Number(
+        initialEndDate.split('-')[1],
+      ) - 1
+    ]}`;
+
   const [
     fromDate,
     setFromDate,
   ] = useState(
-    `${currentYear}-${Months[0]}`,
+    initialStart,
   );
 
   const [
     toDate,
     setToDate,
   ] = useState(
-    `${currentYear}-${Months[2]}`,
+    initialEnd,
   );
 
   const [
@@ -183,7 +230,36 @@ const ConfirmBooking = () => {
   >(null);
 
   /*
-   * Calculate duration in months.
+   * PENDING BOOKING STATE
+   */
+  const [
+    pendingBookingId,
+    setPendingBookingId,
+  ] = useState<
+    string | null
+  >(null);
+
+  const [
+    pendingCreatedAt,
+    setPendingCreatedAt,
+  ] = useState<
+    number | null
+  >(null);
+
+  const [
+    secondsRemaining,
+    setSecondsRemaining,
+  ] = useState(
+    CLIENT_CONFIRMATION_SECONDS,
+  );
+
+  const [
+    confirming,
+    setConfirming,
+  ] = useState(false);
+
+  /*
+   * Calculate duration.
    */
   const duration =
     useMemo(() => {
@@ -199,6 +275,13 @@ const ConfirmBooking = () => {
           'YYYY-MMM',
         );
 
+      if (
+        !start.isValid() ||
+        !end.isValid()
+      ) {
+        return 0;
+      }
+
       return Math.max(
         end.diff(
           start,
@@ -212,11 +295,7 @@ const ConfirmBooking = () => {
     ]);
 
   /*
-   * Client-side preview only.
-   *
-   * Backend calculates the real
-   * booking total from its own
-   * room price.
+   * Total preview.
    */
   const total =
     useMemo(() => {
@@ -230,35 +309,84 @@ const ConfirmBooking = () => {
     ]);
 
   /*
-   * Don't allow the end date to
-   * be before the start date.
+   * Keep end date valid when
+   * start date changes.
    */
   const handleStartDateChange =
     (value: string) => {
-      setFromDate(value);
-
       const start =
         dayjs(
           value,
           'YYYY-MMM',
         );
 
-      const end =
+      if (
+        !start.isValid()
+      ) {
+        return;
+      }
+
+      /*
+       * Never allow a past month.
+       */
+      const now =
+        dayjs().startOf('month');
+
+      if (
+        start.isBefore(
+          now,
+          'month',
+        )
+      ) {
+        Alert.alert(
+          'Invalid lease month',
+          'You cannot start a lease in a past month.',
+        );
+
+        return;
+      }
+
+      setFromDate(value);
+
+      const currentEnd =
         dayjs(
           toDate,
           'YYYY-MMM',
         );
 
+      /*
+       * If current end is before
+       * new start, automatically
+       * move it 3 months forward.
+       */
       if (
-        end.isBefore(
+        !currentEnd.isValid() ||
+        currentEnd.isBefore(
+          start,
+          'month',
+        ) ||
+        currentEnd.isSame(
           start,
           'month',
         )
       ) {
-        setToDate(value);
+        const newEnd =
+          start.add(
+            3,
+            'month',
+          );
+
+        setToDate(
+          newEnd.format(
+            'YYYY-MMM',
+          ),
+        );
       }
     };
 
+  /*
+   * End date validation.
+   */
   const handleEndDateChange =
     (value: string) => {
       const start =
@@ -272,6 +400,13 @@ const ConfirmBooking = () => {
           value,
           'YYYY-MMM',
         );
+
+      if (
+        !start.isValid() ||
+        !end.isValid()
+      ) {
+        return;
+      }
 
       if (
         end.isBefore(
@@ -304,115 +439,323 @@ const ConfirmBooking = () => {
       setToDate(value);
     };
 
-  const bookNow = async () => {
-    if (!roomId) {
-      Alert.alert(
-        'Missing room',
-        'The selected room could not be found. Please select the room again.',
-      );
-
-      return;
-    }
-
-    if (
-      seatIndex ===
-        undefined ||
-      seatIndex === null
-    ) {
-      Alert.alert(
-        'Select a seat',
-        'Please go back and select an available seat.',
-      );
-
-      return;
-    }
-
-    if (
-      pricePerSeat <= 0
-    ) {
-      Alert.alert(
-        'Invalid room price',
-        'The room price could not be loaded. Please go back and select the room again.',
-      );
-
-      return;
-    }
-
-    if (duration <= 0) {
-      Alert.alert(
-        'Invalid lease',
-        'Please select a valid lease period.',
-      );
-
-      return;
-    }
-
-    setBooking(true);
-    setError(null);
-
-    try {
-      /*
-       * IMPORTANT:
-       *
-       * Backend expects:
-       *   roomId
-       *   seatNumber
-       *   startMonth
-       *   durationMonths
-       *
-       * Backend calculates totalAmount itself.
-       */
-      const pendingBooking =
-        await BookingAPI.createBooking(
-          roomId,
-
-          seatIndex,
-
-          dayjs(
-            fromDate,
-            'YYYY-MMM',
-          ).format(
-            'YYYY-MM',
-          ),
-
-          duration,
-        );
-
-      /*
-       * We have now created the
-       * PENDING booking.
-       *
-       * Confirm it.
-       */
+  /*
+   * ----------------------------------------------------------
+   * CREATE PENDING BOOKING
+   * ----------------------------------------------------------
+   */
+  const bookNow =
+    async () => {
       if (
-        pendingBooking.status !==
-        'PENDING'
+        pendingBookingId
       ) {
-        throw new Error(
-          'Booking was not created as pending.',
-        );
+        return;
       }
 
-      const confirmed =
-        await BookingAPI.confirmBooking(
+      if (!roomId) {
+        Alert.alert(
+          'Missing room',
+          'The selected room could not be found. Please select the room again.',
+        );
+
+        return;
+      }
+
+      if (
+        seatIndex ===
+          undefined ||
+        seatIndex === null
+      ) {
+        Alert.alert(
+          'Select a seat',
+          'Please go back and select an available seat.',
+        );
+
+        return;
+      }
+
+      if (
+        pricePerSeat <= 0
+      ) {
+        Alert.alert(
+          'Invalid room price',
+          'The room price could not be loaded. Please go back and select the room again.',
+        );
+
+        return;
+      }
+
+      if (
+        duration <= 0
+      ) {
+        Alert.alert(
+          'Invalid lease',
+          'Please select a valid lease period.',
+        );
+
+        return;
+      }
+
+      /*
+       * Never submit a past lease.
+       */
+      const start =
+        dayjs(
+          fromDate,
+          'YYYY-MMM',
+        );
+
+      const currentMonth =
+        dayjs().startOf('month');
+
+      if (
+        start.isBefore(
+          currentMonth,
+          'month',
+        )
+      ) {
+        Alert.alert(
+          'Invalid lease month',
+          'The lease start month cannot be in the past.',
+        );
+
+        return;
+      }
+
+      setBooking(true);
+      setError(null);
+
+      try {
+        /*
+         * Backend contract:
+         *
+         * roomId
+         * seatNumber
+         * startMonth
+         * durationMonths
+         */
+        const pendingBooking =
+          await BookingAPI.createBooking(
+            roomId,
+            seatIndex,
+            start.format(
+              'YYYY-MM',
+            ),
+            duration,
+          );
+
+        /*
+         * The booking MUST be PENDING.
+         *
+         * DO NOT confirm it immediately.
+         */
+        if (
+          pendingBooking?.status !==
+          'PENDING'
+        ) {
+          throw new Error(
+            'The server did not create a pending booking.',
+          );
+        }
+
+        /*
+         * Store pending booking.
+         */
+        const createdAt =
+          Date.now();
+
+        setPendingBookingId(
           pendingBooking.id,
         );
 
-      if (
-        confirmed.status ===
-        'CONFIRMED'
+        setPendingCreatedAt(
+          createdAt,
+        );
+
+        /*
+         * Prefer backend expiresAt
+         * when available.
+         */
+        const backendExpiresAt =
+          (
+            pendingBooking as any
+          )?.expiresAt;
+
+        if (
+          backendExpiresAt
+        ) {
+          const remaining =
+            Math.max(
+              0,
+              Math.ceil(
+                (
+                  new Date(
+                    backendExpiresAt,
+                  ).getTime() -
+                  Date.now()
+                ) / 1000,
+              ),
+            );
+
+          setSecondsRemaining(
+            remaining ||
+              CLIENT_CONFIRMATION_SECONDS,
+          );
+        } else {
+          setSecondsRemaining(
+            CLIENT_CONFIRMATION_SECONDS,
+          );
+        }
+
+        Alert.alert(
+          'Booking pending',
+          `Seat ${seatIndex} in ${roomName ?? 'the selected room'} is now held for you. Confirm the booking before the timer expires.`,
+        );
+      } catch (
+        err: any
       ) {
+        console.error(
+          'BOOKING CREATE ERROR:',
+          err?.response?.data ??
+            err,
+        );
+
+        const status =
+          err?.response?.status;
+
+        const code =
+          err?.response?.data
+            ?.error?.code ??
+          err?.response?.data
+            ?.code;
+
+        const message =
+          err?.response?.data
+            ?.error?.message ??
+          err?.response?.data
+            ?.message ??
+          err?.message ??
+          'Unable to complete your booking.';
+
+        if (
+          status === 409 ||
+          code === 'CONFLICT'
+        ) {
+          setError(
+            'This seat is no longer available for the selected lease period.',
+          );
+
+          Alert.alert(
+            'Seat unavailable',
+            'This seat was just taken or is already reserved for this lease period. Please go back and choose another available seat.',
+          );
+        } else {
+          setError(
+            message,
+          );
+
+          Alert.alert(
+            'Booking failed',
+            message,
+          );
+        }
+      } finally {
+        setBooking(false);
+      }
+    };
+
+  /*
+   * ----------------------------------------------------------
+   * CONFIRM PENDING BOOKING
+   * ----------------------------------------------------------
+   */
+  const confirmPendingBooking =
+    async () => {
+      if (
+        !pendingBookingId ||
+        confirming
+      ) {
+        return;
+      }
+
+      if (
+        secondsRemaining <= 0
+      ) {
+        Alert.alert(
+          'Booking expired',
+          'The confirmation window has expired. Please start the booking again.',
+        );
+
+        setPendingBookingId(
+          null,
+        );
+
+        setPendingCreatedAt(
+          null,
+        );
+
+        setError(
+          'The booking confirmation window expired.',
+        );
+
+        dispatch(
+          clearBooking(),
+        );
+
+        return;
+      }
+
+      setConfirming(true);
+      setError(null);
+
+      try {
+        const confirmed =
+          await BookingAPI.confirmBooking(
+            pendingBookingId,
+          );
+
+        if (
+          confirmed?.status !==
+          'CONFIRMED'
+        ) {
+          throw new Error(
+            'The booking could not be confirmed.',
+          );
+        }
+
+        /*
+         * Booking successfully confirmed.
+         */
+        const bookedSeat =
+          seatIndex;
+
+        const bookedRoom =
+          roomName ??
+          'the selected room';
+
+        setPendingBookingId(
+          null,
+        );
+
+        setPendingCreatedAt(
+          null,
+        );
+
+        setSecondsRemaining(
+          0,
+        );
+
         dispatch(
           clearBooking(),
         );
 
         Alert.alert(
           'Booking confirmed',
-          `Seat ${seatIndex} in ${roomName} has been successfully reserved.`,
+          `Seat ${bookedSeat} in ${bookedRoom} has been successfully reserved.`,
           [
             {
-              text: 'View My Bookings',
-
+              text:
+                'View My Bookings',
               onPress: () =>
                 navigation.navigate(
                   'MyBookings',
@@ -420,52 +763,431 @@ const ConfirmBooking = () => {
             },
           ],
         );
-      } else {
-        throw new Error(
-          'Booking could not be confirmed.',
-        );
-      }
-    } catch (err: any) {
-      console.error(
-        'BOOKING ERROR:',
-        err?.response?.data ??
-          err,
-      );
-
-      const status =
-        err?.response?.status;
-
-      if (
-        status === 409
+      } catch (
+        err: any
       ) {
-        setError(
-          'This seat is no longer available.',
+        console.error(
+          'BOOKING CONFIRM ERROR:',
+          err?.response?.data ??
+            err,
         );
 
-        Alert.alert(
-          'Seat unavailable',
-          'This seat was taken before your booking was completed. Please choose another available seat.',
-        );
-      } else {
+        const status =
+          err?.response?.status;
+
+        const code =
+          err?.response?.data
+            ?.error?.code ??
+          err?.response?.data
+            ?.code;
+
         const message =
           err?.response?.data
             ?.error?.message ??
           err?.response?.data
             ?.message ??
-          'Unable to complete your booking.';
+          err?.message ??
+          'Unable to confirm the booking.';
 
-        setError(message);
+        if (
+          status === 409 ||
+          code === 'CONFLICT'
+        ) {
+          setError(
+            message ||
+              'The booking confirmation window has expired or the booking is no longer available.',
+          );
 
-        Alert.alert(
-          'Booking failed',
-          message,
-        );
+          Alert.alert(
+            'Booking could not be confirmed',
+            message ||
+              'The booking confirmation window has expired or the booking is no longer available.',
+          );
+
+          setPendingBookingId(
+            null,
+          );
+
+          setPendingCreatedAt(
+            null,
+          );
+
+          dispatch(
+            clearBooking(),
+          );
+        } else {
+          setError(
+            message,
+          );
+
+          Alert.alert(
+            'Confirmation failed',
+            message,
+          );
+        }
+      } finally {
+        setConfirming(false);
       }
-    } finally {
-      setBooking(false);
-    }
-  };
+    };
 
+  /*
+   * ----------------------------------------------------------
+   * ONE-MINUTE COUNTDOWN
+   * ----------------------------------------------------------
+   */
+  useEffect(() => {
+    if (
+      !pendingBookingId ||
+      !pendingCreatedAt
+    ) {
+      return;
+    }
+
+    const timer =
+      setInterval(
+        () => {
+          const elapsed =
+            Math.floor(
+              (
+                Date.now() -
+                pendingCreatedAt
+              ) / 1000,
+            );
+
+          const remaining =
+            Math.max(
+              0,
+              CLIENT_CONFIRMATION_SECONDS -
+                elapsed,
+            );
+
+          setSecondsRemaining(
+            remaining,
+          );
+
+          if (
+            remaining <= 0
+          ) {
+            clearInterval(
+              timer,
+            );
+
+            setPendingBookingId(
+              null,
+            );
+
+            setPendingCreatedAt(
+              null,
+            );
+
+            setError(
+              'The booking confirmation window expired.',
+            );
+
+            dispatch(
+              clearBooking(),
+            );
+
+            Alert.alert(
+              'Booking expired',
+              'The one-minute confirmation window has expired. The seat can now be booked again according to server availability.',
+            );
+          }
+        },
+        1000,
+      );
+
+    return () =>
+      clearInterval(
+        timer,
+      );
+  }, [
+    pendingBookingId,
+    pendingCreatedAt,
+    dispatch,
+  ]);
+
+  /*
+   * ----------------------------------------------------------
+   * PENDING BOOKING SCREEN
+   * ----------------------------------------------------------
+   */
+  if (
+    pendingBookingId
+  ) {
+    const minutes =
+      Math.floor(
+        secondsRemaining /
+          60,
+      );
+
+    const seconds =
+      secondsRemaining %
+      60;
+
+    const timerText =
+      `${String(
+        minutes,
+      ).padStart(2, '0')}:${String(
+        seconds,
+      ).padStart(2, '0')}`;
+
+    return (
+      <View
+        style={
+          styles.container
+        }
+      >
+        <ConfirmScreenHeader />
+
+        <View
+          style={
+            styles.pendingCard
+          }
+        >
+          <View
+            style={
+              styles.pendingIcon
+            }
+          >
+            <Lock
+              size={30}
+              color={
+                Colors.WHITE
+              }
+            />
+          </View>
+
+          <Typography
+            variant="h1"
+            style={
+              styles.pendingTitle
+            }
+          >
+            Booking Pending
+          </Typography>
+
+          <Typography
+            variant="body"
+            color={
+              Colors.TEXT_GRAY
+            }
+            style={
+              styles.pendingSubtitle
+            }
+          >
+            Your seat is currently
+            held for you.
+          </Typography>
+
+          <View
+            style={
+              styles.pendingInfo
+            }
+          >
+            <View
+              style={
+                styles.pendingRow
+              }
+            >
+              <Typography
+                variant="body"
+                color={
+                  Colors.TEXT_GRAY
+                }
+              >
+                Property
+              </Typography>
+
+              <Typography
+                variant="h3"
+                style={
+                  styles.pendingValue
+                }
+              >
+                {
+                  currentProperty
+                    ?.title ??
+                  '-'
+                }
+              </Typography>
+            </View>
+
+            <View
+              style={
+                styles.pendingRow
+              }
+            >
+              <Typography
+                variant="body"
+                color={
+                  Colors.TEXT_GRAY
+                }
+              >
+                Room
+              </Typography>
+
+              <Typography
+                variant="h3"
+                style={
+                  styles.pendingValue
+                }
+              >
+                {
+                  roomName ??
+                  '-'
+                }
+              </Typography>
+            </View>
+
+            <View
+              style={
+                styles.pendingRow
+              }
+            >
+              <Typography
+                variant="body"
+                color={
+                  Colors.TEXT_GRAY
+                }
+              >
+                Seat
+              </Typography>
+
+              <Typography
+                variant="h3"
+                style={
+                  styles.pendingValue
+                }
+              >
+                {
+                  seatIndex ??
+                  '-'
+                }
+              </Typography>
+            </View>
+
+            <View
+              style={
+                styles.pendingRow
+              }
+            >
+              <Typography
+                variant="body"
+                color={
+                  Colors.TEXT_GRAY
+                }
+              >
+                Lease
+              </Typography>
+
+              <Typography
+                variant="h3"
+                style={
+                  styles.pendingValue
+                }
+              >
+                {fromDate} →{' '}
+                {toDate}
+              </Typography>
+            </View>
+
+            <View
+              style={
+                styles.pendingDivider
+              }
+            />
+
+            <View
+              style={
+                styles.pendingTimerBox
+              }
+            >
+              <Typography
+                variant="body"
+                color={
+                  Colors.TEXT_GRAY
+                }
+              >
+                Confirm within
+              </Typography>
+
+              <Typography
+                variant="h1"
+                style={
+                  styles.timer
+                }
+              >
+                {timerText}
+              </Typography>
+            </View>
+          </View>
+
+          {error && (
+            <Typography
+              color="#EF4444"
+              style={
+                styles.error
+              }
+            >
+              {error}
+            </Typography>
+          )}
+
+          <RegularButton
+            Icon={
+              <Lock
+                color={
+                  Colors.WHITE
+                }
+              />
+            }
+            loading={
+              confirming
+            }
+            disable={
+              confirming ||
+              secondsRemaining <=
+                0
+            }
+            onPress={
+              confirmPendingBooking
+            }
+            text={
+              secondsRemaining >
+              0
+                ? `Confirm ${formatNumberIntoCurrency(
+                    total,
+                  )}`
+                : 'Booking expired'
+            }
+          />
+
+          <Typography
+            variant="caption"
+            color={
+              Colors.TEXT_GRAY
+            }
+            style={
+              styles.footer
+            }
+          >
+            Your seat remains
+            pending until you
+            confirm or the
+            confirmation window
+            expires.
+          </Typography>
+        </View>
+      </View>
+    );
+  }
+
+  /*
+   * ----------------------------------------------------------
+   * NORMAL BOOKING SCREEN
+   * ----------------------------------------------------------
+   */
   return (
     <View
       style={
@@ -475,7 +1197,9 @@ const ConfirmBooking = () => {
       <ConfirmScreenHeader />
 
       <View
-        style={styles.card}
+        style={
+          styles.card
+        }
       >
         {/* PROPERTY */}
         <View
@@ -498,9 +1222,11 @@ const ConfirmBooking = () => {
               styles.value
             }
           >
-            {currentProperty
-              ?.title ??
-              '-'}
+            {
+              currentProperty
+                ?.title ??
+              '-'
+            }
           </Typography>
         </View>
 
@@ -525,8 +1251,10 @@ const ConfirmBooking = () => {
               styles.value
             }
           >
-            {roomName ??
-              '-'}
+            {
+              roomName ??
+              '-'
+            }
           </Typography>
         </View>
 
@@ -551,8 +1279,10 @@ const ConfirmBooking = () => {
               styles.value
             }
           >
-            {seatIndex ??
-              '-'}
+            {
+              seatIndex ??
+              '-'
+            }
           </Typography>
         </View>
 
@@ -586,13 +1316,32 @@ const ConfirmBooking = () => {
               {Years.map(
                 year =>
                   Months.map(
-                    month => (
-                      <Picker.Item
-                        key={`${year}-${month}-start`}
-                        label={`${year}-${month}`}
-                        value={`${year}-${month}`}
-                      />
-                    ),
+                    (
+                      month,
+                      monthIndex,
+                    ) => {
+                      /*
+                       * Disable months
+                       * before current
+                       * month.
+                       */
+                      const isPast =
+                        year ===
+                          currentYear &&
+                        monthIndex <
+                          currentMonthIndex;
+
+                      return (
+                        <Picker.Item
+                          key={`${year}-${month}-start`}
+                          label={`${year}-${month}`}
+                          value={`${year}-${month}`}
+                          enabled={
+                            !isPast
+                          }
+                        />
+                      );
+                    },
                   ),
               )}
             </Picker>
@@ -657,9 +1406,11 @@ const ConfirmBooking = () => {
               Colors.TEXT_GRAY
             }
           >
-            {formatNumberIntoCurrency(
-              pricePerSeat,
-            )}{' '}
+            {
+              formatNumberIntoCurrency(
+                pricePerSeat,
+              )
+            }{' '}
             × {duration}{' '}
             months
           </Typography>
@@ -680,9 +1431,11 @@ const ConfirmBooking = () => {
           <Typography
             variant="h1"
           >
-            {formatNumberIntoCurrency(
-              total,
-            )}
+            {
+              formatNumberIntoCurrency(
+                total,
+              )
+            }
           </Typography>
         </View>
 
@@ -706,18 +1459,22 @@ const ConfirmBooking = () => {
             }
           />
         }
-        loading={booking}
+        loading={
+          booking
+        }
         disable={
           booking ||
           duration <= 0 ||
           pricePerSeat <= 0 ||
           seatIndex ===
-            undefined
+            undefined ||
+          seatIndex ===
+            null
         }
         onPress={
           bookNow
         }
-        text={`Confirm ${formatNumberIntoCurrency(
+        text={`Reserve ${formatNumberIntoCurrency(
           total,
         )}`}
       />
@@ -731,9 +1488,12 @@ const ConfirmBooking = () => {
           styles.footer
         }
       >
-        Your booking will be
-        created as pending and
-        confirmed securely.
+        Your booking will
+        first be created as
+        pending. You will
+        then have a short
+        confirmation window
+        to confirm it.
       </Typography>
     </View>
   );
@@ -753,7 +1513,7 @@ const styles =
 
     card: {
       padding: 20,
-      elevation: 1,
+      elevation: 2,
       borderRadius: 16,
       backgroundColor:
         Colors.WHITE,
@@ -772,7 +1532,8 @@ const styles =
 
     value: {
       flex: 1,
-      textAlign: 'right',
+      textAlign:
+        'right',
     },
 
     pickerRow: {
@@ -808,10 +1569,97 @@ const styles =
     error: {
       textAlign:
         'center',
+      marginTop: 4,
     },
 
     footer: {
       textAlign:
         'center',
+      paddingHorizontal: 12,
+    },
+
+    /*
+     * Pending booking UI
+     */
+    pendingCard: {
+      padding: 24,
+      borderRadius: 20,
+      backgroundColor:
+        Colors.WHITE,
+      elevation: 3,
+      gap: 18,
+    },
+
+    pendingIcon: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      alignSelf:
+        'center',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+      backgroundColor:
+        '#F97316',
+    },
+
+    pendingTitle: {
+      textAlign:
+        'center',
+      color:
+        '#111827',
+    },
+
+    pendingSubtitle: {
+      textAlign:
+        'center',
+    },
+
+    pendingInfo: {
+      marginTop: 4,
+      padding: 16,
+      borderRadius: 14,
+      backgroundColor:
+        '#F9FAFB',
+      gap: 16,
+    },
+
+    pendingRow: {
+      flexDirection:
+        'row',
+      justifyContent:
+        'space-between',
+      alignItems:
+        'center',
+      gap: 12,
+    },
+
+    pendingValue: {
+      flex: 1,
+      textAlign:
+        'right',
+      color:
+        '#111827',
+    },
+
+    pendingDivider: {
+      height: 1,
+      backgroundColor:
+        '#E5E7EB',
+    },
+
+    pendingTimerBox: {
+      alignItems:
+        'center',
+      gap: 4,
+    },
+
+    timer: {
+      color:
+        '#F97316',
+      fontSize: 34,
+      fontWeight:
+        '800',
     },
   });
